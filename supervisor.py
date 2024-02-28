@@ -1,6 +1,10 @@
+from imu import IMU
+import time
+
 class Supervisor:
     def __init__(self) -> None:
-        pass
+        imu = IMU()
+        
 
 
 def main():

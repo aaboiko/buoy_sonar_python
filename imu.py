@@ -1,10 +1,12 @@
 import numpy as np
 import time
+import threading
+import json
 
 class IMU:
     def __init__(self, x=0, y=0, z=0, roll=0, pitch=0, yaw=0):
         self.state = {
-            "x" : x,
+            "x": x,
             "y": y,
             "z": z,
             "roll" : roll,
@@ -12,51 +14,53 @@ class IMU:
             "yaw": yaw
         }
 
-        self.disturbances = {
-            "x": {"amps:": [], "phases": []},
-            "y":{"amps:": [], "phases": []},
-            "z": {"amps:": [], "phases": []},
-            "roll": {"amps:": [], "phases": []},
-            "pitch": {"amps:": [], "phases": []},
-            "yaw": {"amps:": [], "phases": []}
-        }
+        file = open('config/imu_disturbances.json')
+        self.disturbances = json.load(file)
+        file.close()
+
+        thread_imu = threading.Thread(target=self.run_sway)
+        thread_imu.start()
+
 
     def get_state(self):
         return self.state
-    
-    def set_state(self, state):
-        self.state = state
 
-    def set_disturbances(self, disturbances):
-        self.disturbances = disturbances
 
-    def harmonic(self, k, amp, phase, t):
-        w = 2 * np.pi * k
+    def harmonic(self, amp, freq, phase, t):
+        w = 2 * np.pi * freq
         return amp * np.sin(w * t + phase)
     
-    def sway_func(self, amps, phases, t):
+
+    def sway_func(self, disturbance, t):
         res = 0
-        for k in range(len(amps)):
-            res += self.harmonic(k, amps[k], phases[k], t)
+        
+        for harm in disturbance:
+            amp = harm["amp"]
+            freq = harm["freq"]
+            phase = harm["phase"]
+            res += self.harmonic(amp, freq, phase, t)
 
         return res
     
 
     def run_sway(self):
-        t = time.time_ns() / 1000000
-        
-        x = self.sway_func(self.disturbances["x"]["amps"], self.disturbances["x"]["phases"], t)
-        y = self.sway_func(self.disturbances["y"]["amps"], self.disturbances["y"]["phases"], t)
-        z = self.sway_func(self.disturbances["z"]["amps"], self.disturbances["z"]["phases"], t)
-        roll = self.sway_func(self.disturbances["roll"]["amps"], self.disturbances["roll"]["phases"], t)
-        pitch = self.sway_func(self.disturbances["pitch"]["amps"], self.disturbances["pitch"]["phases"], t)
-        yaw = self.sway_func(self.disturbances["yaw"]["amps"], self.disturbances["yaw"]["phases"], t)
+        time_start = time.time()
 
-        self.state = {
-            "x" : x,
-            "y": y,
-            "z": z,
-            "roll" : roll,
-            "pitch": pitch,
-            "yaw": yaw
-        }
+        while(True):
+            t = time.time() - time_start
+            
+            x = self.sway_func(self.disturbances["x"], t)
+            y = self.sway_func(self.disturbances["y"], t)
+            z = self.sway_func(self.disturbances["z"], t)
+            roll = self.sway_func(self.disturbances["roll"], t)
+            pitch = self.sway_func(self.disturbances["pitch"], t)
+            yaw = self.sway_func(self.disturbances["yaw"], t)
+
+            self.state = {
+                "x": x,
+                "y": y,
+                "z": z,
+                "roll" : roll,
+                "pitch": pitch,
+                "yaw": yaw
+            }
