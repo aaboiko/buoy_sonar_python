@@ -6,12 +6,22 @@ import json
 class IMU:
     def __init__(self, x=0, y=0, z=0, roll=0, pitch=0, yaw=0):
         self.state = {
-            "x": x,
-            "y": y,
-            "z": z,
-            "roll" : roll,
-            "pitch": pitch,
-            "yaw": yaw
+            "pose": {
+                "x": x,
+                "y": y,
+                "z": z,
+                "roll" : roll,
+                "pitch": pitch,
+                "yaw": yaw
+            },
+            "speed": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "roll" : 0,
+                "pitch": 0,
+                "yaw": 0
+            }
         }
 
         file = open('config/imu_disturbances.json')
@@ -56,7 +66,7 @@ class IMU:
             pitch = self.sway_func(self.disturbances["pitch"], t)
             yaw = self.sway_func(self.disturbances["yaw"], t)
 
-            self.state = {
+            self.state["pose"] = {
                 "x": x,
                 "y": y,
                 "z": z,
