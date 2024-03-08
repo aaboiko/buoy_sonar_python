@@ -34,6 +34,10 @@ class IMU:
 
     def get_state(self):
         return self.state
+    
+
+    def get_pose(self):
+        return self.state["pose"]
 
 
     def harmonic(self, amp, freq, phase, t):
