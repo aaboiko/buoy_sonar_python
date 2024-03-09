@@ -33,7 +33,14 @@ class Robot:
 
     def get_pose(self):
         self.pose = self.imu.get_pose()
-        return self.pose
+        x = self.pose["x"]
+        y = self.pose["y"]
+        z = self.pose["z"]
+        roll = self.pose["roll"]
+        pitch = self.pose["pitch"]
+        yaw = self.pose["yaw"]
+        
+        return np.array([x, y, z, roll, pitch, yaw])
     
 
     def set_transducer_value(self, index, r, a):
