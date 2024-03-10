@@ -1,6 +1,9 @@
 import numpy as np
 from transducer import Transducer
 from imu import IMU
+from map import Map
+import threading
+import time
 
 class Robot:
     def __init__(self, angle, pan_min=0, pan_max=360, tilt_min=-5, tilt_max=5):
@@ -16,17 +19,21 @@ class Robot:
         self.transducers = self.create_transducers(pan_min, pan_max, tilt_min, tilt_max, angle)
         self.imu = IMU()
 
+        self.thread_mapping = threading.Thread(target=self.run_mapping)
+        self.thread_mapping.start()
+
 
     def create_transducers(self, pan_min, pan_max, tilt_min, tilt_max, angle):
-        n_pan = (pan_max - pan_min) // angle
-        n_tilt = (tilt_max - tilt_min) // angle
-        n = n_pan * n_tilt
         transducers = []
 
-        for i in range(n_pan):
-            for j in range(n_tilt):
-                tranducer = Transducer(angle, pan=angle*i, tilt=angle*j)
-                transducers.append(tranducer)
+        for tilt in np.arange(tilt_min, tilt_max, angle):
+            sensor_row = []
+
+            for pan in np.arange(pan_min, pan_max, angle):
+                tranducer = Transducer(angle, pan, tilt)
+                sensor_row.append(tranducer)
+
+            transducers.append(sensor_row)
 
         return transducers
     
@@ -39,7 +46,7 @@ class Robot:
         roll = self.pose["roll"]
         pitch = self.pose["pitch"]
         yaw = self.pose["yaw"]
-        
+
         return np.array([x, y, z, roll, pitch, yaw])
     
 
@@ -53,3 +60,7 @@ class Robot:
 
     def set_transducers(self, transducers):
         self.transducers = transducers
+
+
+    def run_mapping(self):
+        pass

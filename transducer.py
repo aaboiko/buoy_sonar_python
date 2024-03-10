@@ -6,9 +6,12 @@ class Transducer:
         self.angle = angle
         self.sigma_r = sigma_r
         self.sigma_a = sigma_a
-        self.sigma_fi = self.angle / 3
-        self.sigma = np.array([[self.sigma_r**2, 0],
-                               [0, self.sigma_fi**2]])
+        self.sigma_angle = self.angle / (3 * np.sqrt(2))
+
+        self.sigma = np.array([[self.sigma_r**2, 0, 0, 0],
+                               [0, self.sigma_angle**2, 0, 0],
+                               [0, 0, self.sigma_angle**2, 0],
+                               [0, 0, 0, self.sigma_a**2]])
         
         self.r = 0
         self.amplitude = 0
@@ -30,7 +33,11 @@ class Transducer:
         return self.pan, self.tilt
     
     
-    def run(self):
-        pass
+    def get_sigma(self):
+        return self.sigma
+    
+
+    def get_value(self):
+        return np.array([self.r, self.amplitude])
 
     
