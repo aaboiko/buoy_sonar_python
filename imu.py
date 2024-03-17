@@ -29,7 +29,7 @@ class IMU:
         file.close()
 
         thread_imu = threading.Thread(target=self.run_sway)
-        thread_imu.start()
+        #thread_imu.start()
 
 
     def get_state(self):

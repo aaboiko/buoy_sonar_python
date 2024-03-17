@@ -6,7 +6,7 @@ import threading
 import time
 
 class Robot:
-    def __init__(self, angle, pan_min=0, pan_max=360, tilt_min=-5, tilt_max=5):
+    def __init__(self):
         self.pose = {
             "x": 0,
             "y": 0,
@@ -16,11 +16,7 @@ class Robot:
             "yaw": 0
         }
 
-        self.transducers = self.create_transducers(pan_min, pan_max, tilt_min, tilt_max, angle)
         self.imu = IMU()
-
-        self.thread_mapping = threading.Thread(target=self.run_mapping)
-        self.thread_mapping.start()
 
 
     def create_transducers(self, pan_min, pan_max, tilt_min, tilt_max, angle):
@@ -60,7 +56,3 @@ class Robot:
 
     def set_transducers(self, transducers):
         self.transducers = transducers
-
-
-    def run_mapping(self):
-        pass

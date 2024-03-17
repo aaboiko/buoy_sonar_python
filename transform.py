@@ -44,7 +44,7 @@ class Transform:
         return R.T @ (point - trans)
     
 
-    def local_to_world(self, point, params):
+    def local_to_world(point, params):
         x, y, z, roll, pitch, yaw = params
 
         R_roll = np.array([[np.cos(roll), -np.sin(roll), 0],
@@ -65,7 +65,7 @@ class Transform:
         return R @ point + trans
     
 
-    def cart_to_spherical(self, point):
+    def cart_to_spherical(point):
         x, y, z = point
         r = np.sqrt(x**2 + y**2 + z**2)
         theta = np.arctan2(y, x)
@@ -74,7 +74,7 @@ class Transform:
         return np.array([r, phi, theta])
     
 
-    def spherical_to_cart(self, point):
+    def spherical_to_cart(point):
         r, phi, theta = point
         x = r * np.cos(phi) * np.cos(theta)
         y = r * np.cos(phi) * np.sin(theta)

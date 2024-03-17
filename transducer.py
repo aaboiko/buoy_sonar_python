@@ -21,7 +21,13 @@ class Transducer:
 
 
     def diagram(self, angle):
-        return np.exp((angle**2) / (2 * self.sigma_fi**2))
+        #np.exp(-(angle**2) / (2 * self.sigma_angle**2))
+        
+        petal_0 = np.exp(-(angle**2) / (2 * self.sigma_angle**2)),
+        petal_1_left = 1/4 * np.exp(-((angle - 2*self.sigma_angle)**2) / (2 * self.sigma_angle**2)),
+        petal_1_right = 1/4 * np.exp(-((angle + 2*self.sigma_angle)**2) / (2 * self.sigma_angle**2))
+        
+        return np.exp(-(angle**2) / (2 * self.sigma_angle**2))
     
 
     def set_value(self, r, a):

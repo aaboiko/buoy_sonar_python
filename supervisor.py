@@ -1,5 +1,5 @@
 from robot import Robot
-from environment import Environment, Sphere, Cube
+from environment import Environment
 from transform import Transform as tf
 from transducer import Transducer
 import time
@@ -9,6 +9,7 @@ class Supervisor:
     def __init__(self, sonar_angle) -> None:
         self.environment = Environment()
         self.robot = Robot(sonar_angle)
+        self.transducers = self.robot.create_transducers()
 
 
     def amp_normalizer(self, A):
@@ -16,7 +17,6 @@ class Supervisor:
 
 
     def spin(self):
-        transducers = self.robot.get_transducers()
         objects = self.environment.get_objects()
         robot_pose = self.robot.get_pose()
         transducers_new = []
@@ -24,7 +24,7 @@ class Supervisor:
         for obj in objects:
             vertices = obj.get_vertices()
 
-            for transducer in transducers:
+            for transducer in self.transducers:
                 a_sum = 0
                 r_sum = 0
                 pan, tilt = transducer.get_pan_tilt()

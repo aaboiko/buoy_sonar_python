@@ -2,19 +2,18 @@ import numpy as np
 from transform import Transform as tf
 
 class Model:
-    def __init__(self, vertices, pose):
-        x, y, z, roll, pitch, yaw = pose
-        self.vertices = vertices
-        self.points = []
+    def __init__(self, vertices):
+        self.vertices_local = vertices
+        self.vertices_global = []
 
         self.state = {
             "pose": {
-                "x": x,
-                "y": y,
-                "z": z,
-                "roll" : roll,
-                "pitch": pitch,
-                "yaw": yaw
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "roll" : 0,
+                "pitch": 0,
+                "yaw": 0
             },
             "speed": {
                 "x": 0,
@@ -29,8 +28,17 @@ class Model:
         self.trajectory = []
 
         for vertice in vertices:
+            pose = np.array([
+                self.state["pose"]["x"],
+                self.state["pose"]["y"],
+                self.state["pose"]["z"],
+                self.state["pose"]["roll"],
+                self.state["pose"]["pitch"],
+                self.state["pose"]["yaw"],
+            ])
+
             point = tf.local_to_world(vertice, pose)
-            self.points.append(point)
+            self.vertices_global.append(point)
 
 
     def get_state(self):
@@ -48,9 +56,47 @@ class Model:
             "z": vz
         }
 
+    
+    def set_pose(self, pose):
+        self.state["pose"] = pose
+
 
     def get_vertices(self):
-        return self.vertices
+        return self.vertices_global
+    
+
+class ModelParametric:
+    def __init__(self, pose):
+        self.pose = pose
+        self.type = "infinite"
+
+
+    def set_pose(self, pose):
+        self.pose = pose
+
+
+    def get_pose(self):
+        return self.pose
+    
+    
+    def get_type(self):
+        return self.type
+    
+
+class Sphere(ModelParametric):
+    def __init__(self, radius, pose):
+        super().__init__(pose)
+        self.radius = radius
+        self.type = "sphere"
+
+
+class Ellipsoid(ModelParametric):
+    def __init__(self, a, b, c, pose):
+        super().__init__(pose)
+        self.a = a
+        self.b = b
+        self.c = c
+        self.type = "ellipsoid"
 
 
 class Environment:
@@ -71,9 +117,9 @@ class Environment:
 
         for phi in np.linspace(0, 2 * np.pi, n):
             for theta in np.linspace(-np.pi / 2, np.pi / 2, n):
-                xc = radius * np.sin(theta) * np.cos(phi)
-                yc = radius * np.sin(theta) * np.sin(phi)
-                zc = radius * np.cos(theta)
+                xc = radius * np.cos(theta) * np.cos(phi)
+                yc = radius * np.cos(theta) * np.sin(phi)
+                zc = radius * np.sin(theta)
 
                 point = np.array([xc, yc, zc])
                 points.append(point)
