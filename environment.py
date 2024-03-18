@@ -69,6 +69,7 @@ class ModelParametric:
     def __init__(self, pose):
         self.pose = pose
         self.type = "infinite"
+        self.trajectory = []
 
 
     def set_pose(self, pose):
@@ -81,6 +82,10 @@ class ModelParametric:
     
     def get_type(self):
         return self.type
+
+
+    def set_trajectory(self, traj):
+        self.trajectory = traj
     
 
 class Sphere(ModelParametric):

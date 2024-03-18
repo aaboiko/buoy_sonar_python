@@ -1,6 +1,6 @@
 import numpy as np
 
-class Map:
+class Frame:
     def __init__(self):
         self.spacemarks = dict()
 
@@ -11,3 +11,12 @@ class Map:
 
     def remove_spacemark(self, id):
         del self.spacemarks[id]
+
+
+class Map:
+    def __init__(self):
+        self.frames = []
+
+    
+    def add_frame(self, frame):
+        self.frames.append(frame)

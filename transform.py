@@ -23,7 +23,7 @@ class Transform:
         return np.array([w, x, y, z])
     
 
-    def world_to_local(self, point, params):
+    def world_to_local(point, params):
         x, y, z, roll, pitch, yaw = params
 
         R_roll = np.array([[np.cos(roll), -np.sin(roll), 0],
@@ -60,8 +60,9 @@ class Transform:
                            [0,            0,            1]])
         
         trans = np.array([x, y, z])
-        R = R_roll @ R_pitch @ R_yaw
+        R = R_yaw @ R_pitch @ R_roll
 
+        #print('line 65: point = ' + str(point) + ' R = ' + str(R) + ' trans = ' + str(trans) + ' result = ' + str(R @ point + trans))
         return R @ point + trans
     
 
@@ -79,6 +80,9 @@ class Transform:
         x = r * np.cos(phi) * np.cos(theta)
         y = r * np.cos(phi) * np.sin(theta)
         z = r * np.sin(phi)
+        #print('\nlines 80, 81: ')
+        #print('r = ' + str(r) + ' phi = ' + str(phi) + ' theta = ' + str(theta))
+        #print('x = ' + str(x) + ' y = ' + str(y) + ' z = ' + str(z))
         return np.array([x, y, z])
     
 
@@ -94,3 +98,24 @@ class Transform:
         vec1 = self.spherical_to_cart(np.array([1, tilt1, pan1]))
         vec2 = self.spherical_to_cart(np.array([1, tilt2, pan2]))
         return self.rad_to_deg(np.arccos(np.dot(vec1, vec2)))
+    
+
+    def rotate_vector(vec, rpy):
+        roll, pitch, yaw = rpy
+
+        R_roll = np.array([[np.cos(roll), -np.sin(roll), 0],
+                           [np.sin(roll), np.cos(roll), 0],
+                           [0,            0,            1]])
+        
+        R_pitch = np.array([[1,     0,                 0],
+                            [0, np.cos(pitch), -np.sin(pitch)],
+                            [0, np.sin(pitch), np.cos(pitch)]])
+        
+        R_yaw = np.array([[np.cos(yaw), -np.sin(yaw), 0],
+                           [np.sin(yaw), np.cos(yaw), 0],
+                           [0,            0,            1]])
+        
+        return R_yaw @ R_pitch @ R_roll @ vec
+        
+
+
