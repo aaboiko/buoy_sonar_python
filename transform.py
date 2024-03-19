@@ -116,6 +116,26 @@ class Transform:
                            [0,            0,            1]])
         
         return R_yaw @ R_pitch @ R_roll @ vec
+    
+
+    def rotate_matrix(A, rpy):
+        roll, pitch, yaw = rpy
+
+        R_roll = np.array([[np.cos(roll), -np.sin(roll), 0],
+                           [np.sin(roll), np.cos(roll), 0],
+                           [0,            0,            1]])
+        
+        R_pitch = np.array([[1,     0,                 0],
+                            [0, np.cos(pitch), -np.sin(pitch)],
+                            [0, np.sin(pitch), np.cos(pitch)]])
+        
+        R_yaw = np.array([[np.cos(yaw), -np.sin(yaw), 0],
+                           [np.sin(yaw), np.cos(yaw), 0],
+                           [0,            0,            1]])
+        
+        R = R_yaw @ R_pitch @ R_roll
+
+        return R @ A @ R.T 
         
 
 

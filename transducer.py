@@ -13,7 +13,7 @@ class Transducer:
                                [0, 0, self.sigma_angle**2, 0],
                                [0, 0, 0, self.sigma_a**2]])
         
-        self.r = np.inf
+        self.r = 150
         self.amplitude = 0
         self.pan = pan
         self.tilt = tilt

@@ -103,6 +103,19 @@ class Ellipsoid(ModelParametric):
         self.c = c
         self.type = "ellipsoid"
 
+        self.A_orth = np.eye(3) * np.array([1/(a**2), 1/(b**2), 1/(c**2)])
+        self.center = self.pose[0:3]
+        self.rpy = self.pose[3:6]
+        self.A = tf.rotate_matrix(self.A_orth, self.rpy)
+
+    
+    def set_pose(self, pose):
+        self.pose = pose
+        self.center = self.pose[0:3]
+        self.rpy = self.pose[3:6]
+        self.A = tf.rotate_matrix(self.A_orth, self.rpy)
+
+
 
 class Environment:
     def __init__(self):
@@ -111,6 +124,11 @@ class Environment:
 
     def add_object(self, obj):
         self.objects.append(obj)
+
+
+    def add_objects(self, objects):
+        for obj in objects:
+            self.objects.append(obj)
 
 
     def get_objects(self):
