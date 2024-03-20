@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Ellipse, Circle
 import time
 import pickle
 import os
@@ -13,6 +13,22 @@ from transducer import Transducer
 from map import Map
 
 SONAR_MAX_RANGE = 150
+
+
+def single_measure_test(sonars, objs, robot, frame_size):
+    robot_pose = robot.get_pose()
+    measure_distances(sonars, objs, robot_pose)
+    measurements = get_measurements_xyz(sonars, robot_pose)
+
+    for meas_row in measurements:
+        for meas in meas_row:
+            x, y, z = meas
+            plt.scatter(x, y, s=2, color='blue')
+            
+    plt.axis(frame_size)
+    plt.gca().set_aspect('equal')
+    plt.show()
+
 
 def create_transducers(pan_min, pan_max, tilt_min, tilt_max, angle, sigma):
         transducers = []
@@ -69,7 +85,13 @@ def measure_ellipsoid(axis, center, bias, A):
         return np.linalg.norm(r)
     
     return SONAR_MAX_RANGE
-     
+
+
+def reset_values(sonars):
+    for sonar_row in sonars:
+        for sonar in sonar_row:
+            sonar.set_value(SONAR_MAX_RANGE, 0)
+
 
 def measure_distances(sonars, objs, robot_pose):
     measurements = []
@@ -79,6 +101,7 @@ def measure_distances(sonars, objs, robot_pose):
     for sonar_row in sonars:
         meas_row = []
         for sonar in sonar_row:
+            sonar.reset()
             for obj in objs:
                 pan, tilt = sonar.get_pan_tilt()
                 phi = np.deg2rad(tilt)
@@ -132,14 +155,53 @@ def get_measurements_xyz(sonars, robot_pose):
     return measurements_xyz
 
 
-def move_traj_and_save_meas(traj, sonars, obj, robot_pose):
+def move_traj_animation(traj, sonars, obj, robot, clear=True):
+    fig, ax = plt.subplots()
+    #plt.set_aspect('equal')
+
+    #n = len(trajs)
+    #assert len(trajs) == len(objs)
+    iter = 0
+
+    for point in traj:
+        obj.set_pose(point)
+        robot_pose = robot.get_pose()
+        measure_distances(sonars, [obj], robot_pose)
+        measurements = get_measurements_xyz(sonars, robot_pose)
+
+        for meas_row in measurements:
+            for meas in meas_row:
+                x, y, z = meas
+                plt.scatter(x, y, s=2, color='blue')
+        
+        ellipse = Ellipse(xy=[point[0], point[1]], width=2*obj.a, height=2*obj.b, angle=np.rad2deg(point[3]))
+        ellipse.set_alpha(0.25)
+        plt.gca().add_artist(ellipse)
+
+        plt.axis([0, 6.5, 0, 6.5])
+        plt.gca().set_aspect('equal')
+
+        plt.plot(traj[0:iter, 0], traj[0:iter, 1], 'r-', color='green')
+
+        plt.pause(0.01)
+
+        ellipse.remove()
+        if clear:
+            plt.clf()
+        #print(measurements)
+        iter += 1
+
+    plt.show()
+
+
+def move_traj_and_save_meas(traj, sonars, obj, robot):
     map = []
 
     for point in traj:
         print('New point processing: ' + str(point))
         obj.set_pose(point)
         robot_pose = robot.get_pose()
-        measure_distances(sonars, obj, robot_pose)
+        measure_distances(sonars, [obj], robot_pose)
         measurements = get_measurements_xyz(sonars, robot_pose)
         map.append(measurements)
 
@@ -147,21 +209,14 @@ def move_traj_and_save_meas(traj, sonars, obj, robot_pose):
     print('done')
 
 
-'''def update(t):
-    x = t
-    y = t
-    point.set_data([x], [y])gf
-    return point,'''
-
-
-sonars = create_transducers(0, 90, -4, 4, 2, 0.2)
+sonars = create_transducers(0, 90, -4, 4, 5, 0.1)
 print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
 
 env = Environment()
 
 objs = [
-    Sphere(1, np.array([2, 6, 0])),
-    Ellipsoid(2, 3, 2, np.array([7, 3, 0, np.pi/2, 0, 0]))
+    #Sphere(3, np.array([2, 6, 0])),
+    Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0]))
 ]
 
 for obj in objs:
@@ -172,28 +227,12 @@ env.add_objects(objs)
 robot = Robot()
 robot.set_transducers(sonars)
 
-robot_pose = robot.get_pose()
-measure_distances(sonars, objs, robot_pose)
-measurements = get_measurements_xyz(sonars, robot_pose)
+#single_measure_test(sonars, objs, robot, [0, 6.5, 0, 6.5])
         
-#traj = np.loadtxt('trajectories/traj_linear_right_down_diag.txt', delimiter=' ')
+traj = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
+move_traj_animation(traj, sonars, objs[0], robot, clear=False)
 
-fig, ax = plt.subplots()
-ax.axis([-10, 10, -10, 10])
-ax.set_aspect('equal')
 
-for meas_row in measurements:
-    for meas in meas_row:
-        x, y, z = meas
-        ax.scatter(x, y, s=2, color='blue')
-
-plt.show()
-
-'''ani = FuncAnimation(fig, update, interval=100, blit=True, repeat=True,
-                    frames=np.linspace(0, 100, 1000, endpoint=False))
-
-plt.show()'''
-
-#move_traj_and_save_meas(traj, sonars, obj, robot_pose)
+#move_traj_and_save_meas(traj, sonars, obj, robot)
 
 #map = pickle.load(open('datasets/synthetic/sphere_linear_right_down.bin', 'rb'))

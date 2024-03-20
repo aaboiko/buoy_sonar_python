@@ -45,5 +45,10 @@ class Transducer:
 
     def get_value(self):
         return np.array([self.r, self.amplitude])
+    
+
+    def reset(self):
+        self.r = 150
+        self.amplitude = 0
 
     
