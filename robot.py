@@ -8,8 +8,8 @@ import time
 class Robot:
     def __init__(self):
         self.pose = {
-            "x": 0,
-            "y": 0,
+            "x": 6,
+            "y": 6,
             "z": 0,
             "roll": 0,
             "pitch": 0,

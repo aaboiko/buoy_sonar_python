@@ -11,6 +11,7 @@ from environment import Environment, Sphere, Ellipsoid
 from transform import Transform as tf
 from transducer import Transducer
 from map import Map
+from pointcloud_processor import PointcloudProcessor as pp
 
 SONAR_MAX_RANGE = 150
 
@@ -24,6 +25,7 @@ def single_measure_test(sonars, objs, robot, frame_size):
         for meas in meas_row:
             x, y, z = meas
             plt.scatter(x, y, s=2, color='blue')
+            #print('x = ' + str(x) + ', y = ' + str(y))
             
     plt.axis(frame_size)
     plt.gca().set_aspect('equal')
@@ -56,8 +58,9 @@ def measure_sphere(a, center, bias, radius):
 
     if D >= 0:
         t = (-b_sq - np.sqrt(D)) / (2 * a_sq)
-        r = np.array([ax*t, ay*t, az*t]) - bias
-        return np.linalg.norm(r) 
+        if t >= 0:
+            r = np.array([ax*t, ay*t, az*t]) 
+            return np.linalg.norm(r) 
     
     return SONAR_MAX_RANGE
 
@@ -81,8 +84,9 @@ def measure_ellipsoid(axis, center, bias, A):
 
     if D >= 0:
         t = (-b_sq - np.sqrt(D)) / (2 * a_sq)
-        r = np.array([ax*t, ay*t, az*t]) - bias
-        return np.linalg.norm(r)
+        if t >= 0:
+            r = np.array([ax*t, ay*t, az*t])
+            return np.linalg.norm(r)
     
     return SONAR_MAX_RANGE
 
@@ -178,7 +182,7 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
         ellipse.set_alpha(0.25)
         plt.gca().add_artist(ellipse)
 
-        plt.axis([0, 6.5, 0, 6.5])
+        plt.axis([0, 15, 0, 15])           
         plt.gca().set_aspect('equal')
 
         plt.plot(traj[0:iter, 0], traj[0:iter, 1], 'r-', color='green')
@@ -230,7 +234,7 @@ robot.set_transducers(sonars)
 #single_measure_test(sonars, objs, robot, [0, 6.5, 0, 6.5])
         
 traj = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
-move_traj_animation(traj, sonars, objs[0], robot, clear=False)
+move_traj_animation(traj, sonars, objs[0], robot, clear=True)
 
 
 #move_traj_and_save_meas(traj, sonars, obj, robot)

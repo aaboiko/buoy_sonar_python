@@ -138,4 +138,11 @@ class Transform:
         return R @ A @ R.T 
         
 
+    def reflection_angle_cosine_ellipsoid(axis, p_collide, center, A):
+        normal = 2 * A @ (p_collide - center)
+        return np.dot(-axis, normal) / (np.linalg.norm(normal) * np.linalg.norm(axis))
+    
 
+    def reflection_angle_cosine_sphere(axis, p_collide, center):
+        normal = 2 * np.eye(3) @ (p_collide - center)
+        return np.dot(-axis, normal) / (np.linalg.norm(normal) * np.linalg.norm(axis))
