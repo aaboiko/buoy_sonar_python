@@ -12,11 +12,13 @@ from transform import Transform as tf
 from transducer import Transducer
 from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
+from filters import CTKalmanFilter
 
 SONAR_MAX_RANGE = 150
+T = 0.1
 
-
-def single_measure_test(sonars, objs, robot, frame_size):
+def single_measure_test(env, sonars, objs, robot, frame_size):
+    env.add_objects(objs)
     robot_pose = robot.get_pose()
     measure_distances(sonars, objs, robot_pose)
     measurements = get_measurements_xyz(sonars, robot_pose)
@@ -159,6 +161,16 @@ def get_measurements_xyz(sonars, robot_pose):
     return measurements_xyz
 
 
+def get_cloud_from_measurements(measurements):
+    cloud = []
+
+    for meas_row in measurements:
+        for meas in meas_row:
+            cloud.append(meas)
+
+    return cloud
+
+
 def move_traj_animation(traj, sonars, obj, robot, clear=True):
     fig, ax = plt.subplots()
     #plt.set_aspect('equal')
@@ -166,23 +178,42 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
     #n = len(trajs)
     #assert len(trajs) == len(objs)
     iter = 0
+    sigma = sonars[0][0].get_sigma()
+    ftr = CTKalmanFilter(sigma)
+
+    x0 = traj[0][0]
+    y0 = traj[0][1]
+    vx0 = (traj[1][0] - traj[0][0]) / T
+    vy0 = (traj[1][1] - traj[0][1]) / T
+    x_cur = np.array([x0, y0, vx0, vy0, 1.0])
+    x_f = [x_cur]
 
     for point in traj:
         obj.set_pose(point)
         robot_pose = robot.get_pose()
         measure_distances(sonars, [obj], robot_pose)
         measurements = get_measurements_xyz(sonars, robot_pose)
+        cloud = get_cloud_from_measurements(measurements)
 
-        for meas_row in measurements:
-            for meas in meas_row:
-                x, y, z = meas
-                plt.scatter(x, y, s=2, color='blue')
+        '''for p in cloud:
+            x, y, z = p
+            plt.scatter(x, y, s=2, color='blue')'''
+
+        com = pp.center_of_mass(cloud)
+        y_k = com[0:2]
+        plt.scatter(com[0], com[1], s=2, color='red')
+
+        x_new = ftr.EKF(x_f[iter], y_k)
+        x_f.append(x_new)
+        com_filtered = x_new[0:3]
+        #print('com_filtered: ' + str(com_filtered))
+        plt.scatter(com_filtered[0], com_filtered[1], s=3, color='blue')
         
         ellipse = Ellipse(xy=[point[0], point[1]], width=2*obj.a, height=2*obj.b, angle=np.rad2deg(point[3]))
         ellipse.set_alpha(0.25)
         plt.gca().add_artist(ellipse)
 
-        plt.axis([0, 15, 0, 15])           
+        plt.axis([-5, 20, 0, 25])           
         plt.gca().set_aspect('equal')
 
         plt.plot(traj[0:iter, 0], traj[0:iter, 1], 'r-', color='green')
@@ -213,30 +244,113 @@ def move_traj_and_save_meas(traj, sonars, obj, robot):
     print('done')
 
 
-sonars = create_transducers(0, 90, -4, 4, 5, 0.1)
-print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
+def move_traj_and_concat_cloud(traj, sonars, obj, robot):
+    cloud_sum = []
+    n = len(traj)
+    iter = 0
+    progress_prev = -1
+
+    for point in traj:
+        progress = int(iter / n) * 100
+        if progress > progress_prev:
+            print('in progress: ' + str(progress) + str('%'))
+            progress_prev = progress
+
+        obj.set_pose(point)
+        robot_pose = robot.get_pose()
+        measure_distances(sonars, [obj], robot_pose)
+        measurements = get_measurements_xyz(sonars, robot_pose)
+        cloud = get_cloud_from_measurements(measurements)
+        cloud_c = pp.centrate(cloud)
+        #print('iter: '+ str(iter))
+        iter += 1
+
+        
+
+        for point in cloud_c:
+            cloud_sum.append(point)
+            x, y, z = point 
+            plt.scatter(x, y, s=2, color='blue')
+
+    plt.show()
+
+
+def generate_dataset_morphologic(angle, env, objs, robot):
+    dataset = []
+
+    for obj in objs:
+        cloud_obj = []
+
+        for x in np.arange(10, 150, 10):
+            print('processing: ' + str(int(100 * x / 140)) + '%')
+            for roll in np.linspace(0, 2*np.pi, 10):
+                for pitch in np.linspace(0, np.pi/2, 10):
+                    env.clear()
+                    env.add_object(obj)
+                    obj_pose = np.array([x, 0, 0, roll, pitch, 0])
+                    obj.set_pose(obj_pose)
+
+                    sonars = create_transducers(-45, 45, -10, 10, angle, 0.1)
+                    #print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
+                    robot.set_transducers(sonars)
+
+                    robot_pose = robot.get_pose()
+                    measure_distances(sonars, [obj], robot_pose)
+                    measurements = get_measurements_xyz(sonars, robot_pose)
+
+                    cloud_raw = get_cloud_from_measurements(measurements)
+                    cloud = pp.centrate(cloud_raw)
+
+                    for point in cloud:
+                        cloud_obj.append(point)
+
+                    frame = {
+                        "name": obj.name,
+                        "cloud": cloud
+                    }
+                    dataset.append(frame)
+
+        print(obj.name + ' processing done. Saving data...')
+        pickle.dump(cloud_obj, open('datasets/synthetic/morphologic/concatenated/' + obj.name+ '_angle_' + str(angle) + '.bin', 'wb'))
+        print(obj.name + ' processing finished. Data saved')
+
+    print('Done. Saving dump...')
+    pickle.dump(dataset, open('datasets/synthetic/morphologic/separate/morphologic_1_angle_' + str(angle) + '.bin', 'wb'))
+    print('finished')
+
+
 
 env = Environment()
+robot = Robot()
 
 objs = [
-    #Sphere(3, np.array([2, 6, 0])),
-    Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0]))
+    Ellipsoid(3, 3, 3, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
+    Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0])),   #for spinning
+
+    Ellipsoid(1, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='sphere'),
+    Ellipsoid(0.9, 0.4, 0.4, np.array([3, 3, 0, 0, 0, 0]), name='human'),
+    Ellipsoid(2, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='dolphin'),
+    Ellipsoid(3, 1, 1.5, np.array([3, 3, 0, 0, 0, 0]), name='drone')
 ]
 
 for obj in objs:
     print('Object created: type = ' + obj.type + ', pose = ' + str(obj.pose))
 
-env.add_objects(objs)
+angle = 2
+#generate_dataset_morphologic(angle, env, objs, robot)
 
-robot = Robot()
+sonars = create_transducers(0, 90, -4, 4, angle, 0.1)
+print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
+env.add_object(objs[0])
 robot.set_transducers(sonars)
 
-#single_measure_test(sonars, objs, robot, [0, 6.5, 0, 6.5])
+#single_measure_test(env, sonars, objs, robot, [0, 6.5, 0, 6.5])
         
-traj = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
-move_traj_animation(traj, sonars, objs[0], robot, clear=True)
+traj_rotate = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
+traj_linear = np.loadtxt('trajectories/traj_linear_right_down_diag.txt', delimiter=' ')
+move_traj_animation(traj_linear, sonars, objs[0], robot, clear=False)
 
-
+#move_traj_and_concat_cloud(traj_linear, sonars, objs[0], robot)
 #move_traj_and_save_meas(traj, sonars, obj, robot)
 
 #map = pickle.load(open('datasets/synthetic/sphere_linear_right_down.bin', 'rb'))

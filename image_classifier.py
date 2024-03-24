@@ -3,6 +3,8 @@ from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxP
 from tensorflow.python.keras.models import Sequential
 import cv2
 import os
+import glob
+import trimesh
 
 class ImageClassifier:
     def __init__(self) -> None:

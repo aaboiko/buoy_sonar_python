@@ -66,9 +66,10 @@ class Model:
     
 
 class ModelParametric:
-    def __init__(self, pose):
+    def __init__(self, pose, name=''):
         self.pose = pose
         self.type = "infinite"
+        self.name = name
         self.trajectory = []
 
 
@@ -89,15 +90,15 @@ class ModelParametric:
     
 
 class Sphere(ModelParametric):
-    def __init__(self, radius, pose):
-        super().__init__(pose)
+    def __init__(self, radius, pose, name=''):
+        super().__init__(pose, name=name)
         self.radius = radius
         self.type = "sphere"
 
 
 class Ellipsoid(ModelParametric):
-    def __init__(self, a, b, c, pose):
-        super().__init__(pose)
+    def __init__(self, a, b, c, pose, name=''):
+        super().__init__(pose, name=name)
         self.a = a
         self.b = b
         self.c = c
@@ -129,6 +130,15 @@ class Environment:
     def add_objects(self, objects):
         for obj in objects:
             self.objects.append(obj)
+
+    def remove_object(self, name):
+        for obj in self.objects:
+            if obj.name == name:
+                self.objects.remove(obj)
+
+
+    def clear(self):
+        self.objects.clear()
 
 
     def get_objects(self):
