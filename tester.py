@@ -12,7 +12,7 @@ from transform import Transform as tf
 from transducer import Transducer
 from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
-from filters import CTKalmanFilter
+from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D
 
 SONAR_MAX_RANGE = 150
 T = 0.1
@@ -177,16 +177,20 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
 
     #n = len(trajs)
     #assert len(trajs) == len(objs)
-    iter = 0
+    iter = -2
     sigma = sonars[0][0].get_sigma()
-    ftr = CTKalmanFilter(sigma)
+    ftr = CVKalmanFilter_7D(sigma)
 
     x0 = traj[0][0]
     y0 = traj[0][1]
+    z0 = traj[0][3]
     vx0 = (traj[1][0] - traj[0][0]) / T
     vy0 = (traj[1][1] - traj[0][1]) / T
-    x_cur = np.array([x0, y0, vx0, vy0, 1.0])
-    x_f = [x_cur]
+    vz0 = (traj[1][2] - traj[2][2]) / T
+
+    x_cur = np.array([0, 0, 0, 1, 1, 0])
+    x_f = []
+    flag = 2
 
     for point in traj:
         obj.set_pose(point)
@@ -200,20 +204,30 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
             plt.scatter(x, y, s=2, color='blue')'''
 
         com = pp.center_of_mass(cloud)
-        y_k = com[0:2]
+        p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax = pp.get_margin_points(cloud)
+        #y_k = com[0:3]
+        y_k = np.block([com, p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax])
         plt.scatter(com[0], com[1], s=2, color='red')
 
-        x_new = ftr.EKF(x_f[iter], y_k)
-        x_f.append(x_new)
-        com_filtered = x_new[0:3]
-        #print('com_filtered: ' + str(com_filtered))
-        plt.scatter(com_filtered[0], com_filtered[1], s=3, color='blue')
+        if flag == 2:
+            x_cur[0:3] = com
+            flag -= 1
+        elif flag == 1:
+            x_cur[3:6] = np.zeros(3)
+            x_f.append(x_cur)
+            flag -= 1
+        else:
+            x_new = ftr.EKF(x_f[iter], y_k)
+            x_f.append(x_new)
+            com_filtered = x_new[0:3]
+            #print('com_filtered: ' + str(com_filtered))
+            plt.scatter(com_filtered[0], com_filtered[1], s=3, color='blue')
         
         ellipse = Ellipse(xy=[point[0], point[1]], width=2*obj.a, height=2*obj.b, angle=np.rad2deg(point[3]))
         ellipse.set_alpha(0.25)
         plt.gca().add_artist(ellipse)
 
-        plt.axis([-5, 20, 0, 25])           
+        plt.axis([0, 20, 0, 20])           
         plt.gca().set_aspect('equal')
 
         plt.plot(traj[0:iter, 0], traj[0:iter, 1], 'r-', color='green')
@@ -324,7 +338,7 @@ env = Environment()
 robot = Robot()
 
 objs = [
-    Ellipsoid(3, 3, 3, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
+    Ellipsoid(1, 1, 1, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
     Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0])),   #for spinning
 
     Ellipsoid(1, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='sphere'),
@@ -336,7 +350,7 @@ objs = [
 for obj in objs:
     print('Object created: type = ' + obj.type + ', pose = ' + str(obj.pose))
 
-angle = 2
+angle = 1
 #generate_dataset_morphologic(angle, env, objs, robot)
 
 sonars = create_transducers(0, 90, -4, 4, angle, 0.1)
@@ -348,6 +362,7 @@ robot.set_transducers(sonars)
         
 traj_rotate = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
 traj_linear = np.loadtxt('trajectories/traj_linear_right_down_diag.txt', delimiter=' ')
+traj_circle = np.loadtxt('trajectories/traj_circle_r5.txt', delimiter=' ')
 move_traj_animation(traj_linear, sonars, objs[0], robot, clear=False)
 
 #move_traj_and_concat_cloud(traj_linear, sonars, objs[0], robot)

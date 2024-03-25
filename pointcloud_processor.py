@@ -49,6 +49,38 @@ class PointcloudProcessor:
         return size_x, size_y, size_z
     
 
+    def get_margin_points(cloud):
+        n = len(cloud)
+
+        if n == 0:
+            return np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3)
+        
+        p_xmin = cloud[0]
+        p_ymin = cloud[0]
+        p_zmin = cloud[0]
+        p_xmax = cloud[0]
+        p_ymax = cloud[0]
+        p_zmax = cloud[0]
+
+        for point in cloud:
+            x, y, z = point
+
+            if x < p_xmin[0]:
+                p_xmin = point
+            if x > p_xmax[0]:
+                p_xmax = point
+            if y < p_ymin[1]:
+                p_ymin = point
+            if y > p_ymax[1]:
+                p_ymax = point
+            if z < p_zmin[2]:
+                p_zmin = point
+            if z > p_zmax[2]:
+                p_zmax = point
+
+        return p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax
+    
+
     def center_of_mass(cloud):
         sum = np.zeros(3)
         n = len(cloud)

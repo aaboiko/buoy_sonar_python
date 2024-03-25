@@ -1,10 +1,15 @@
 import tensorflow as tf
 from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
 from tensorflow.python.keras.models import Sequential
+from tensorflow import keras
+from tensorflow.python.keras import layers
+
 import cv2
 import os
 import glob
 import trimesh
+
+from pointcloud_processor import PointcloudProcessor as pp
 
 class ImageClassifier:
     def __init__(self) -> None:
@@ -34,3 +39,8 @@ class ImageClassifier:
                     validation_data=(x_test, y_test))
         
         return history
+    
+
+class CloudClassifier:
+    def __init__(self):
+        self.inputs = keras.Input(shape=(NUM_POINTS, 3))
