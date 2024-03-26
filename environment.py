@@ -186,3 +186,58 @@ class Environment:
         ]
 
         return Model(points)
+    
+
+    def generate_random_trajectory(self, start, angle_start, v_mean, sigma_v, sigma_angle, n):
+        x0, y0, z0 = start
+        p_start = np.array([x0, y0, z0, angle_start, 0, 0])
+
+        traj = [p_start]
+
+        for t in range(n - 1):
+            x_prev, y_prev, z_prev, roll_prev, pitch_prev, yaw_prev = traj[t]
+            v = np.random.normal(v_mean, sigma_v)
+            angle = roll_prev + np.random.normal(0, sigma_angle)
+
+            x = x_prev + v * np.cos(angle)
+            y = y_prev + v * np.sin(angle)
+            z = 0
+            roll = angle
+            pitch = 0
+            yaw = 0
+
+            point_new = np.array([x, y, z, roll, pitch, yaw])
+            traj.append(point_new)
+
+        res = np.zeros((n, 6))
+
+        for i in range(n):
+            x, y, z, roll, pitch, yaw = traj[i]
+            res[i, 0] = x
+            res[i, 1] = y
+            res[i, 2] = z
+            res[i, 3] = roll
+            res[i, 4] = pitch
+            res[i, 5] = yaw
+
+        return res
+    
+
+    def get_trajectory_bounds(self, traj):
+        xmin = np.inf
+        ymin = np.inf
+        xmax = -np.inf
+        ymax = -np.inf
+
+        for point in traj:
+            x, y, z, roll, pitch, yaw = point
+            xmin = min(xmin, x)
+            ymin = min(ymin, y)
+            xmax = max(xmax, x)
+            ymax = max(ymax, y)
+
+        bmax = max(xmax, ymax)
+        bmin = min(xmin, ymin)
+
+        return [xmin - 10, xmax + 10, ymin - 10, ymax + 10]
+

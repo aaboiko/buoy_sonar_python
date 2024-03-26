@@ -53,7 +53,8 @@ class PointcloudProcessor:
         n = len(cloud)
 
         if n == 0:
-            return np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3),  np.ones(3)
+            print('Zero pointcloud')
+            return np.inf*np.ones(3),  np.inf*np.ones(3),  np.inf*np.ones(3),  np.inf*np.ones(3),  np.inf*np.ones(3),  np.ones(3)
         
         p_xmin = cloud[0]
         p_ymin = cloud[0]

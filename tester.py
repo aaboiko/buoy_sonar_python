@@ -12,7 +12,7 @@ from transform import Transform as tf
 from transducer import Transducer
 from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
-from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D
+from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D, CTKalmanFilter_7D
 
 SONAR_MAX_RANGE = 150
 T = 0.1
@@ -49,7 +49,7 @@ def create_transducers(pan_min, pan_max, tilt_min, tilt_max, angle, sigma):
         return transducers
 
 
-def measure_sphere(a, center, bias, radius):
+def measure_sphere(a, center, bias, radius, angle):
     ax, ay, az = a
     xc, yc, zc = center - bias
 
@@ -63,11 +63,17 @@ def measure_sphere(a, center, bias, radius):
         if t >= 0:
             r = np.array([ax*t, ay*t, az*t]) 
             return np.linalg.norm(r) 
+    else:
+        v_c = center - bias
+        delta_angle = tf.angle_between_vectors(v_c, a)
+
+        if delta_angle <= angle:
+            return np.linalg.norm(v_c) - radius
     
     return SONAR_MAX_RANGE
 
 
-def measure_ellipsoid(axis, center, bias, A):
+def measure_ellipsoid(axis, center, bias, A, angle):
     ax, ay, az = axis
     xb, yb, zb = bias - center
     
@@ -89,7 +95,17 @@ def measure_ellipsoid(axis, center, bias, A):
         if t >= 0:
             r = np.array([ax*t, ay*t, az*t])
             return np.linalg.norm(r)
-    
+    else:
+        U, J, V = np.linalg.svd(A)
+        semiax = np.min(J)
+        v_c = center - bias
+        delta_angle = tf.angle_between_vectors(v_c, axis)
+        #print('delta_angle = ' + str(np.rad2deg(angle)))
+
+        if delta_angle <= angle:
+            #print('Object in sector! angle: ' + str(np.rad2deg(delta_angle)))
+            return np.linalg.norm(v_c) - semiax
+
     return SONAR_MAX_RANGE
 
 
@@ -108,6 +124,8 @@ def measure_distances(sonars, objs, robot_pose):
         meas_row = []
         for sonar in sonar_row:
             sonar.reset()
+            angle = np.deg2rad(sonar.angle)
+
             for obj in objs:
                 pan, tilt = sonar.get_pan_tilt()
                 phi = np.deg2rad(tilt)
@@ -117,14 +135,14 @@ def measure_distances(sonars, objs, robot_pose):
 
                 if obj.type == "sphere":
                     center = obj.get_pose()
-                    r = measure_sphere(a_world, center, robot_xyz, obj.radius)
+                    r = measure_sphere(a_world, center, robot_xyz, obj.radius, angle)
                     if sonar.get_value()[0] > r:
                         meas_row.append(r)
                         sonar.set_value(r, 1)
 
                 if obj.type == "ellipsoid":
                     center = obj.center
-                    r = measure_ellipsoid(a_world, center, robot_xyz, obj.A)
+                    r = measure_ellipsoid(a_world, center, robot_xyz, obj.A, angle)
                     if sonar.get_value()[0] > r:
                         meas_row.append(r)
                         sonar.set_value(r, 1)
@@ -171,7 +189,7 @@ def get_cloud_from_measurements(measurements):
     return cloud
 
 
-def move_traj_animation(traj, sonars, obj, robot, clear=True):
+def move_traj_animation(traj, sonars, obj, robot, clear=True, ftr_type='cv7d'):
     fig, ax = plt.subplots()
     #plt.set_aspect('equal')
 
@@ -179,20 +197,26 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
     #assert len(trajs) == len(objs)
     iter = -2
     sigma = sonars[0][0].get_sigma()
-    ftr = CVKalmanFilter_7D(sigma)
+    bounds = env.get_trajectory_bounds(traj)
 
-    x0 = traj[0][0]
-    y0 = traj[0][1]
-    z0 = traj[0][3]
-    vx0 = (traj[1][0] - traj[0][0]) / T
-    vy0 = (traj[1][1] - traj[0][1]) / T
-    vz0 = (traj[1][2] - traj[2][2]) / T
+    if ftr_type == 'cv7d':
+        ftr = CVKalmanFilter_7D(sigma)
+        x_cur = np.array([0, 0, 0, 1, 1, 0])  
+    if ftr_type == 'ct7d':
+        ftr = CTKalmanFilter_7D(sigma)
+        x_cur = np.array([0, 0, 0, 1, 1])
+    if ftr_type == 'cv':
+        ftr = CVKalmanFilter(sigma)
+        x_cur = np.array([0, 0, 0, 1, 1, 0])
+    if ftr_type == 'ct':
+        ftr = CTKalmanFilter(sigma)
+        x_cur = np.array([0, 0, 0, 1, 1])
 
-    x_cur = np.array([0, 0, 0, 1, 1, 0])
     x_f = []
     flag = 2
 
     for point in traj:
+        print(point)
         obj.set_pose(point)
         robot_pose = robot.get_pose()
         measure_distances(sonars, [obj], robot_pose)
@@ -206,14 +230,31 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
         com = pp.center_of_mass(cloud)
         p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax = pp.get_margin_points(cloud)
         #y_k = com[0:3]
-        y_k = np.block([com, p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax])
+
+        if ftr_type == 'cv7d':
+            y_k = np.block([com, p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax])
+        if ftr_type == 'ct7d':
+            y_k = np.block([com[0:2], p_xmin[0:2], p_xmax[0:2], p_ymin[0:2], p_ymax[0:2], p_zmin[0:2], p_zmax[0:2]])
+        if ftr_type == 'cv':
+            y_k = com
+        if ftr_type == 'ct':
+            y_k = com[0:2]
+
         plt.scatter(com[0], com[1], s=2, color='red')
 
         if flag == 2:
-            x_cur[0:3] = com
+            if ftr_type == 'cv7d' or ftr_type == 'cv':
+                x_cur[0:3] = com
+            if ftr_type == 'ct7d' or ftr_type == 'ct':
+                x_cur[0:2] = com[0:2]
+
             flag -= 1
         elif flag == 1:
-            x_cur[3:6] = np.zeros(3)
+            if ftr_type == 'cv7d' or ftr_type == 'cv':
+                x_cur[3:6] = np.zeros(3)
+            if ftr_type == 'ct7d' or ftr_type == 'ct':
+                x_cur[2:4] = np.zeros(2)
+
             x_f.append(x_cur)
             flag -= 1
         else:
@@ -227,7 +268,7 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True):
         ellipse.set_alpha(0.25)
         plt.gca().add_artist(ellipse)
 
-        plt.axis([0, 20, 0, 20])           
+        plt.axis(bounds)           
         plt.gca().set_aspect('equal')
 
         plt.plot(traj[0:iter, 0], traj[0:iter, 1], 'r-', color='green')
@@ -333,13 +374,56 @@ def generate_dataset_morphologic(angle, env, objs, robot):
     print('finished')
 
 
+def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
+    dataset = []
+
+    for obj in objs:
+        if obj.name == 'sphere':
+            v_mean = 0
+            sigma_v = 0
+            sigma_angle = 0
+        if obj.name == 'human':
+            v_mean = 0
+            sigma_v = 0
+            sigma_angle = 0
+        if obj.name == 'dolphin':
+            v_mean = 0
+            sigma_v = 0
+            sigma_angle = 0
+        if obj.name == 'drone':
+            v_mean = 0
+            sigma_v = 0
+            sigma_angle = 0
+
+        for i in range(num_trajs):
+            x_start = np.random.uniform(20, 30)
+            y_start = np.random.uniform(20, 30)
+            start = np.array([x_start, y_start, 0])
+            angle_start = np.random.uniform(0, 2 * np.pi)
+            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, n_points)
+
+            for point in traj:
+                env.clear()
+                env.add_object(obj)
+                obj.set_pose(point)
+
+                sonars = create_transducers(-180, 170, -10, 10, angle, 0.1)
+                robot.set_transducers(sonars)
+
+                robot_pose = robot.get_pose()
+                measure_distances(sonars, [obj], robot_pose)
+                measurements = get_measurements_xyz(sonars, robot_pose)
+
+                cloud_raw = get_cloud_from_measurements(measurements)
+                cloud = pp.centrate(cloud_raw)
+
 
 env = Environment()
 robot = Robot()
 
 objs = [
-    Ellipsoid(1, 1, 1, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
-    Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0])),   #for spinning
+    #Ellipsoid(1, 1, 1, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
+    #Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0])),   #for spinning
 
     Ellipsoid(1, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='sphere'),
     Ellipsoid(0.9, 0.4, 0.4, np.array([3, 3, 0, 0, 0, 0]), name='human'),
@@ -350,10 +434,17 @@ objs = [
 for obj in objs:
     print('Object created: type = ' + obj.type + ', pose = ' + str(obj.pose))
 
+start = np.array([20, 20, 0])
+angle_start = -np.pi / 2
+v_mean = 1
+sigma_v = 0
+sigma_angle = np.pi / 18
+n_points = 50
+
 angle = 1
 #generate_dataset_morphologic(angle, env, objs, robot)
 
-sonars = create_transducers(0, 90, -4, 4, angle, 0.1)
+sonars = create_transducers(-180, 170, -4, 4, angle, 0.1)
 print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
 env.add_object(objs[0])
 robot.set_transducers(sonars)
@@ -363,7 +454,10 @@ robot.set_transducers(sonars)
 traj_rotate = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
 traj_linear = np.loadtxt('trajectories/traj_linear_right_down_diag.txt', delimiter=' ')
 traj_circle = np.loadtxt('trajectories/traj_circle_r5.txt', delimiter=' ')
-move_traj_animation(traj_linear, sonars, objs[0], robot, clear=False)
+
+traj_random = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, n_points)
+
+move_traj_animation(traj_random, sonars, objs[0], robot, clear=False, ftr_type='ct')
 
 #move_traj_and_concat_cloud(traj_linear, sonars, objs[0], robot)
 #move_traj_and_save_meas(traj, sonars, obj, robot)
