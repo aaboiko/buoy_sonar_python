@@ -376,33 +376,47 @@ def generate_dataset_morphologic(angle, env, objs, robot):
 
 def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
     dataset = []
+    n = len(objs) * num_trajs
 
     for obj in objs:
         if obj.name == 'sphere':
-            v_mean = 0
-            sigma_v = 0
+            v_mean = 1
+            sigma_v = 0.1
             sigma_angle = 0
         if obj.name == 'human':
-            v_mean = 0
-            sigma_v = 0
-            sigma_angle = 0
+            v_mean = 1
+            sigma_v = 0.3
+            sigma_angle = np.pi / 10
         if obj.name == 'dolphin':
-            v_mean = 0
-            sigma_v = 0
-            sigma_angle = 0
+            v_mean = 5
+            sigma_v = 1
+            sigma_angle = np.pi / 8
         if obj.name == 'drone':
-            v_mean = 0
-            sigma_v = 0
+            v_mean = 10
+            sigma_v = 1
             sigma_angle = 0
 
+        prev = -1
+
         for i in range(num_trajs):
+            progress = int(100 * i / num_trajs)
+            if progress > prev:
+                print('in progress for: ' + obj.name + ' ' + str(progress) + '%')
+                prev = progress
+
             x_start = np.random.uniform(20, 30)
             y_start = np.random.uniform(20, 30)
             start = np.array([x_start, y_start, 0])
             angle_start = np.random.uniform(0, 2 * np.pi)
-            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, n_points)
+            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, traj_len)
+
+            traj_data = []
+            iter = 0
 
             for point in traj:
+                print('processing point #' + str(iter) + ' ' + str(point))
+                iter += 1
+
                 env.clear()
                 env.add_object(obj)
                 obj.set_pose(point)
@@ -414,8 +428,19 @@ def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
                 measure_distances(sonars, [obj], robot_pose)
                 measurements = get_measurements_xyz(sonars, robot_pose)
 
-                cloud_raw = get_cloud_from_measurements(measurements)
-                cloud = pp.centrate(cloud_raw)
+                cloud = get_cloud_from_measurements(measurements)
+                traj_data.append(cloud)
+
+            data_obj = {
+                "name": obj.name,
+                "data": traj_data
+            }
+
+            dataset.append(data_obj)
+
+    print('generating completed. Saving...')
+    pickle.dump(dataset, open('datasets/synthetic/united/united_1.bin', 'wb'))
+    print('saved succesfully')
 
 
 env = Environment()
@@ -427,7 +452,7 @@ objs = [
 
     Ellipsoid(1, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='sphere'),
     Ellipsoid(0.9, 0.4, 0.4, np.array([3, 3, 0, 0, 0, 0]), name='human'),
-    Ellipsoid(2, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='dolphin'),
+    Ellipsoid(1.5, 0.5, 0.5, np.array([3, 3, 0, 0, 0, 0]), name='dolphin'),
     Ellipsoid(3, 1, 1.5, np.array([3, 3, 0, 0, 0, 0]), name='drone')
 ]
 
@@ -440,9 +465,11 @@ v_mean = 1
 sigma_v = 0
 sigma_angle = np.pi / 18
 n_points = 50
+n_trajs = 100
 
 angle = 1
 #generate_dataset_morphologic(angle, env, objs, robot)
+generate_dataset_united(angle, env, objs, robot, n_points, n_trajs)
 
 sonars = create_transducers(-180, 170, -4, 4, angle, 0.1)
 print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
@@ -457,7 +484,7 @@ traj_circle = np.loadtxt('trajectories/traj_circle_r5.txt', delimiter=' ')
 
 traj_random = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, n_points)
 
-move_traj_animation(traj_random, sonars, objs[0], robot, clear=False, ftr_type='ct')
+#move_traj_animation(traj_random, sonars, objs[0], robot, clear=False, ftr_type='ct')
 
 #move_traj_and_concat_cloud(traj_linear, sonars, objs[0], robot)
 #move_traj_and_save_meas(traj, sonars, obj, robot)
