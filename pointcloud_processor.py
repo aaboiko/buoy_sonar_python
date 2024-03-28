@@ -113,3 +113,19 @@ class PointcloudProcessor:
             res.append(point_new)
 
         return res
+    
+
+    def get_mean_size(self, clouds):
+        n = len(clouds)
+        res = np.zeros(3)
+
+        for cloud in clouds:
+            size_x, size_y, size_z = self.get_size(cloud)
+            res += np.array([size_x, size_y, size_z]) / n
+        
+        res_x, res_y, res_z = res
+        return res
+
+
+    def get_embedding(cloud):
+        embed = np.array([])

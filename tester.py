@@ -12,7 +12,7 @@ from transform import Transform as tf
 from transducer import Transducer
 from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
-from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D, CTKalmanFilter_7D
+from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D, CTKalmanFilter_7D, DubinsKalmanFilter
 
 SONAR_MAX_RANGE = 150
 T = 0.1
@@ -211,6 +211,9 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True, ftr_type='cv7d'):
     if ftr_type == 'ct':
         ftr = CTKalmanFilter(sigma)
         x_cur = np.array([0, 0, 0, 1, 1])
+    if ftr_type == 'dub':
+        ftr = DubinsKalmanFilter(sigma)
+        x_cur = np.array([0, 0, 0, 1, 0, 0])
 
     x_f = []
     flag = 2
@@ -235,7 +238,7 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True, ftr_type='cv7d'):
             y_k = np.block([com, p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax])
         if ftr_type == 'ct7d':
             y_k = np.block([com[0:2], p_xmin[0:2], p_xmax[0:2], p_ymin[0:2], p_ymax[0:2], p_zmin[0:2], p_zmax[0:2]])
-        if ftr_type == 'cv':
+        if ftr_type == 'cv' or ftr_type == 'dub':
             y_k = com
         if ftr_type == 'ct':
             y_k = com[0:2]
@@ -243,7 +246,7 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True, ftr_type='cv7d'):
         plt.scatter(com[0], com[1], s=2, color='red')
 
         if flag == 2:
-            if ftr_type == 'cv7d' or ftr_type == 'cv':
+            if ftr_type == 'cv7d' or ftr_type == 'cv' or ftr_type == 'dub':
                 x_cur[0:3] = com
             if ftr_type == 'ct7d' or ftr_type == 'ct':
                 x_cur[0:2] = com[0:2]
@@ -251,9 +254,11 @@ def move_traj_animation(traj, sonars, obj, robot, clear=True, ftr_type='cv7d'):
             flag -= 1
         elif flag == 1:
             if ftr_type == 'cv7d' or ftr_type == 'cv':
-                x_cur[3:6] = np.zeros(3)
+                x_cur[3:6] = com - x_cur[0:3]
             if ftr_type == 'ct7d' or ftr_type == 'ct':
                 x_cur[2:4] = np.zeros(2)
+            if ftr_type == 'dub':
+                x_cur[3:6] = np.zeros(3)
 
             x_f.append(x_cur)
             flag -= 1
@@ -443,6 +448,15 @@ def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
     print('saved succesfully')
 
 
+def extract_features(dataset):
+    res_arr = []
+
+    for data_obj in dataset:
+        name = data_obj["name"]
+        clouds = data_obj["data"]
+        cloud_size = pp.get_mean_size(clouds)
+
+
 env = Environment()
 robot = Robot()
 
@@ -469,7 +483,7 @@ n_trajs = 100
 
 angle = 1
 #generate_dataset_morphologic(angle, env, objs, robot)
-generate_dataset_united(angle, env, objs, robot, n_points, n_trajs)
+#generate_dataset_united(angle, env, objs, robot, n_points, n_trajs)
 
 sonars = create_transducers(-180, 170, -4, 4, angle, 0.1)
 print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
@@ -484,7 +498,7 @@ traj_circle = np.loadtxt('trajectories/traj_circle_r5.txt', delimiter=' ')
 
 traj_random = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, n_points)
 
-#move_traj_animation(traj_random, sonars, objs[0], robot, clear=False, ftr_type='ct')
+move_traj_animation(traj_circle, sonars, objs[0], robot, clear=False, ftr_type='cv')
 
 #move_traj_and_concat_cloud(traj_linear, sonars, objs[0], robot)
 #move_traj_and_save_meas(traj, sonars, obj, robot)

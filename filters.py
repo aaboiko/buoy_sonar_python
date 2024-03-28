@@ -18,9 +18,9 @@ class CTKalmanFilter:
         self.sigma_phi = self.sigma_polar[1, 1]
         self.sigma_theta = self.sigma_polar[2, 2]
 
-        self.sigma_x = 0.2
-        self.sigma_y = 0.2
-        self.sigma_w = 0.001
+        self.sigma_x = 2.2
+        self.sigma_y = 2.2
+        self.sigma_w = 0.1
 
         self.Q = np.array([[0, 0, 0, 0, 0],
                             [0, 0, 0, 0, 0],
@@ -86,7 +86,7 @@ class CTKalmanFilter:
 
 class CVKalmanFilter:
     def __init__(self, sigma):
-        self.P_prev = 10e6 * np.ones(6)
+        self.P_prev = (10^6) * np.ones(6)
         
         self.T = T
         self.sigma_polar = sigma[0:3, 0:3]
@@ -99,9 +99,9 @@ class CVKalmanFilter:
         self.sigma_phi = self.sigma_polar[1, 1]
         self.sigma_theta = self.sigma_polar[2, 2]
 
-        self.sigma_x = 0.2
-        self.sigma_y = 0.2
-        self.sigma_z = 0.2
+        self.sigma_x = 5.2
+        self.sigma_y = 5.2
+        self.sigma_z = 5.2
 
         self.Q = np.array([[(T*self.sigma_x)**2, 0, 0, 0, 0, 0],
                             [0, (T*self.sigma_y)**2, 0, 0, 0, 0],
@@ -354,6 +354,97 @@ class CTKalmanFilter_7D:
         F = P_k @ self.C.T @ inv(S)
         x_new = x_head + F @ y_tilda
         P_new = (np.eye(5) - F @ self.C) @ P_k
+
+        self.P_prev = P_new
+
+        return x_new
+    
+
+class DubinsKalmanFilter:
+    def __init__(self, sigma):
+        self.P_prev = 10e6 * np.ones(6)
+        self.T = T
+        self.sigma_polar = sigma[0:3, 0:3]
+
+        self.C = np.array([[1, 0, 0, 0, 0, 0],
+                           [0, 1, 0, 0, 0, 0],
+                           [0, 0, 1, 0, 0, 0]])
+
+        self.sigma_r = self.sigma_polar[0, 0]
+        self.sigma_phi = self.sigma_polar[1, 1]
+        self.sigma_theta = self.sigma_polar[2, 2]
+
+        self.sigma_x = 0.2
+        self.sigma_y = 0.2
+        self.sigma_z = 0.2
+        self.sigma_v = 0.2
+        self.sigma_ph = 0
+        self.sigma_th = 0
+
+        self.Q = np.array([[(T*self.sigma_x)**2, 0, 0, 0, 0, 0],
+                            [0, (T*self.sigma_y)**2, 0, 0, 0, 0],
+                            [0, 0, (T*self.sigma_z)**2, 0, 0, 0],
+                            [0, 0, 0, (T*self.sigma_v)**2, 0, 0],
+                            [0, 0, 0, 0, (T*self.sigma_ph)**2, 0],
+                            [0, 0, 0, 0, 0, (T*self.sigma_th)**2]])
+        
+        self.R = np.array([[self.sigma_r*T**2, 0, 0],
+                            [0, self.sigma_phi*T**2, 0],
+                            [0, 0, self.sigma_theta*T**2]])
+    
+
+    def jac(self, r, phi, theta):
+        return np.array([[cos(phi)*cos(theta), -r*sin(phi)*cos(theta), -r*cos(phi)*sin(theta)],
+                        [cos(phi)*sin(theta), -r*sin(phi)*sin(theta), r*cos(phi)*cos(theta)],
+                        [sin(phi),             r*cos(phi),             0]])
+
+
+    def get_A(self, v, phi, theta):
+        R = np.array([[T*np.cos(phi)*np.cos(theta), -v*T*np.sin(phi)*np.cos(theta), -v*T*np.cos(phi)*np.sin(theta)],
+                      [T*np.cos(phi)*np.sin(theta), -v*T*np.sin(phi)*np.sin(theta), v*T*np.cos(phi)*np.cos(theta)],
+                      [T*np.sin(phi),                v*T*np.cos(phi),                0]])
+        
+        I = np.eye(3)
+        O = np.zeros((3, 3))
+        
+        return np.block([[I, R],
+                         [O, I]])
+    
+
+    def f(self, x_prev):
+        x, y, z, v, phi, theta = x_prev
+
+        x_new = x + v * T * np.cos(phi) * np.cos(theta)
+        y_new = y + v * T * np.cos(phi) * np.sin(theta)
+        z_new = z + v * T * np.sin(phi)
+        v_new = v
+        phi_new = phi
+        theta_new = theta
+
+        return np.array([x_new, y_new, z_new, v_new, phi_new, theta_new])
+    
+
+    def h(self, x_prev):
+        return self.C @ x_prev 
+
+    
+    def EKF(self, x_prev, y_k):
+        x_head = self.f(x_prev)
+        x, y, z, v, phi, theta = x_prev
+        A = self.get_A(v, phi, theta)
+        P_k = A @ self.P_prev @ A.T + self.Q
+        y_head = self.h(x_head)
+
+        x1, y1, z1 = y_head
+        r, phi, theta = tf.cart_to_spherical(np.array([x1, y1, z1]))
+        J = self.jac(r, phi, theta)
+        R = J @ self.R @ J.T
+
+        S = self.C @ P_k @ self.C.T + R
+        y_tilda = y_k - y_head
+        F = P_k @ self.C.T @ inv(S)
+        x_new = x_head + F @ y_tilda
+        P_new = (np.eye(6) - F @ self.C) @ P_k
 
         self.P_prev = P_new
 

@@ -239,5 +239,5 @@ class Environment:
         bmax = max(xmax, ymax)
         bmin = min(xmin, ymin)
 
-        return [xmin - 10, xmax + 10, ymin - 10, ymax + 10]
+        return [xmin - 1, xmax + 1, ymin - 1, ymax + 1]
 
