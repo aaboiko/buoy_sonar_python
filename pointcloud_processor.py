@@ -1,5 +1,7 @@
 import numpy as np
 
+T = 0.1
+
 class PointcloudProcessor:
     def __init__(self):
         pass
@@ -125,6 +127,55 @@ class PointcloudProcessor:
         
         res_x, res_y, res_z = res
         return res
+    
+
+    def get_traj_params(traj):
+        traj_len = 0
+        point_prev = traj[0]
+        n_points = len(traj)
+
+        for point in traj[1:]:
+            dist = np.linalg.norm(point - point_prev)
+            traj_len += dist
+            point_prev = point
+
+        v_mean = traj_len / (T * n_points)
+
+        point_prev = traj[0]
+        variance = 0
+
+        for point in traj[1:]:
+            v_loc = np.linalg.norm(point - point_prev) / T
+            point_prev = point
+            variance += ((v_loc - v_mean)**2) / n_points
+
+        v_sigma = np.sqrt(variance)
+
+        traj_1 = [np.zeros(3)]
+        traj_2 = [np.zeros(3)]
+        point_prev = traj[0]
+
+        for point in traj[1:]:
+            v_loc = (point - point_prev) / T
+            point_prev = point
+            traj_1.append(v_loc)
+
+        point_prev = traj_1[0]
+        for point in traj_1[1:]:
+            a_loc = (point - point_prev) / T
+            point_prev = point
+            traj_2.append(a_loc)
+
+        curvature = 0
+        for i in range(n_points):
+            dot_1 = traj_1[i]
+            dot_2 = traj_2[i]
+            
+            if np.linalg.norm(dot_1) > 0:
+                kappa = np.linalg.norm(np.cross(dot_1, dot_2)) / (np.linalg.norm(dot_1)**3)
+                curvature += kappa / n_points
+
+        return v_mean, v_sigma, curvature
 
 
     def get_embedding(cloud):

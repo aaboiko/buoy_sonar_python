@@ -374,12 +374,12 @@ class DubinsKalmanFilter:
         self.sigma_phi = self.sigma_polar[1, 1]
         self.sigma_theta = self.sigma_polar[2, 2]
 
-        self.sigma_x = 0.2
-        self.sigma_y = 0.2
-        self.sigma_z = 0.2
-        self.sigma_v = 0.2
-        self.sigma_ph = 0
-        self.sigma_th = 0
+        self.sigma_x = 5.2
+        self.sigma_y = 5.2
+        self.sigma_z = 5.2
+        self.sigma_v = 2.2
+        self.sigma_ph = 0.1
+        self.sigma_th = 0.1
 
         self.Q = np.array([[(T*self.sigma_x)**2, 0, 0, 0, 0, 0],
                             [0, (T*self.sigma_y)**2, 0, 0, 0, 0],
@@ -449,3 +449,12 @@ class DubinsKalmanFilter:
         self.P_prev = P_new
 
         return x_new
+    
+
+class LinearApproximator:
+    def __init__(self):
+        pass
+
+
+    def approximate(self, points):
+        pass

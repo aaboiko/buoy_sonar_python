@@ -191,6 +191,7 @@ class Environment:
     def generate_random_trajectory(self, start, angle_start, v_mean, sigma_v, sigma_angle, n):
         x0, y0, z0 = start
         p_start = np.array([x0, y0, z0, angle_start, 0, 0])
+        T = 0.1
 
         traj = [p_start]
 
@@ -199,8 +200,8 @@ class Environment:
             v = np.random.normal(v_mean, sigma_v)
             angle = roll_prev + np.random.normal(0, sigma_angle)
 
-            x = x_prev + v * np.cos(angle)
-            y = y_prev + v * np.sin(angle)
+            x = x_prev + v * T * np.cos(angle)
+            y = y_prev + v * T * np.sin(angle)
             z = 0
             roll = angle
             pitch = 0
