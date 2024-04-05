@@ -444,7 +444,7 @@ def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
             dataset.append(data_obj)
 
     print('generating completed. Saving...')
-    pickle.dump(dataset, open('datasets/synthetic/united/united_validate_1.bin', 'wb'))
+    pickle.dump(dataset, open('datasets/synthetic/united/united_10.bin', 'wb'))
     print('saved succesfully')
 
 
@@ -545,8 +545,179 @@ def extract_features(dataset, sigma, ftr_type='cv'):
         res_arr.append(write_obj)
 
     print('feature extracting completed. Saving...')
-    pickle.dump(res_arr, open('datasets/synthetic/united/features_validate_1.bin', 'wb'))
+    pickle.dump(res_arr, open('datasets/synthetic/united/features_10.bin', 'wb'))
     print('saved succesfully')
+
+
+def validate(angle, env, objs, robot, traj_len, num_trajs, ftr_type='cv'):
+
+    #dataset generating
+    dataset = []
+    n = len(objs) * num_trajs
+    sigma = None
+
+    for obj in objs:
+        if obj.name == 'sphere':
+            v_mean = 1
+            sigma_v = 0.1
+            sigma_angle = 0
+        if obj.name == 'human':
+            v_mean = 1
+            sigma_v = 0.3
+            sigma_angle = np.pi / 10
+        if obj.name == 'dolphin':
+            v_mean = 5
+            sigma_v = 1
+            sigma_angle = np.pi / 8
+        if obj.name == 'drone':
+            v_mean = 10
+            sigma_v = 1
+            sigma_angle = 0
+
+        prev = -1
+
+        for i in range(num_trajs):
+            progress = int(100 * i / num_trajs)
+            if progress > prev:
+                print('in progress for: ' + obj.name + ' ' + str(progress) + '%, angle = ' + str(angle))
+                prev = progress
+
+            x_start = np.random.uniform(20, 30)
+            y_start = np.random.uniform(20, 30)
+            start = np.array([x_start, y_start, 0])
+            angle_start = np.random.uniform(0, 2 * np.pi)
+            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, traj_len)
+
+            traj_data = []
+            iter = 0
+
+            for point in traj:
+                print('processing point #' + str(iter) + ' ' + str(point))
+                iter += 1
+
+                env.clear()
+                env.add_object(obj)
+                obj.set_pose(point)
+
+                sonars = create_transducers(-180, 170, -10, 10, angle, 0.1)
+                robot.set_transducers(sonars)
+                sigma = sonars[0][0].get_sigma()
+
+                robot_pose = robot.get_pose()
+                measure_distances(sonars, [obj], robot_pose)
+                measurements = get_measurements_xyz(sonars, robot_pose)
+
+                cloud = get_cloud_from_measurements(measurements)
+                traj_data.append(cloud)
+
+            data_obj = {
+                "name": obj.name,
+                "data": traj_data
+            }
+
+            dataset.append(data_obj)
+
+    #feature extracting
+    n = len(dataset)
+    prev = -1
+    step = 0
+    X = []
+    Y = []
+
+    for data_obj in dataset:
+        progress = int(100 * step / n)
+        if progress > prev:
+            print('feature extractor is in progress: ' + str(progress) + '%, angle = ' + str(angle))
+            prev = progress
+
+        name = data_obj["name"]
+        clouds = data_obj["data"]
+
+        x_size, y_size, z_size = pp.get_mean_size(pp, clouds)
+
+        iter = -2
+        step += 1
+
+        if ftr_type == 'cv7d':
+            ftr = CVKalmanFilter_7D(sigma)
+            x_cur = np.array([0, 0, 0, 1, 1, 0])  
+        if ftr_type == 'ct7d':
+            ftr = CTKalmanFilter_7D(sigma)
+            x_cur = np.array([0, 0, 0, 1, 1])
+        if ftr_type == 'cv':
+            ftr = CVKalmanFilter(sigma)
+            x_cur = np.array([0, 0, 0, 1, 1, 0])
+        if ftr_type == 'ct':
+            ftr = CTKalmanFilter(sigma)
+            x_cur = np.array([0, 0, 0, 1, 1])
+        if ftr_type == 'dub':
+            ftr = DubinsKalmanFilter(sigma)
+            x_cur = np.array([0, 0, 0, 1, 0, 0])
+
+        x_f = []
+        traj = []
+        flag = 2
+        clouds_len = len(clouds)
+        cloud_step = 0
+
+        for cloud in clouds:
+            cloud_step += 1
+            com = pp.center_of_mass(cloud)
+            print('cloud is processing: ' + str(cloud_step) + '/' + str(clouds_len))
+            p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax = pp.get_margin_points(cloud)
+
+            if ftr_type == 'cv7d':
+                y_k = np.block([com, p_xmin, p_xmax, p_ymin, p_ymax, p_zmin, p_zmax])
+            if ftr_type == 'ct7d':
+                y_k = np.block([com[0:2], p_xmin[0:2], p_xmax[0:2], p_ymin[0:2], p_ymax[0:2], p_zmin[0:2], p_zmax[0:2]])
+            if ftr_type == 'cv' or ftr_type == 'dub':
+                y_k = com
+            if ftr_type == 'ct':
+                y_k = com[0:2]
+
+            if flag == 2:
+                if ftr_type == 'cv7d' or ftr_type == 'cv' or ftr_type == 'dub':
+                    x_cur[0:3] = com
+                if ftr_type == 'ct7d' or ftr_type == 'ct':
+                    x_cur[0:2] = com[0:2]
+
+                flag -= 1
+            elif flag == 1:
+                if ftr_type == 'cv7d' or ftr_type == 'cv':
+                    x_cur[3:6] = com - x_cur[0:3]
+                if ftr_type == 'ct7d' or ftr_type == 'ct':
+                    x_cur[2:4] = np.zeros(2)
+                if ftr_type == 'dub':
+                    x_cur[3:6] = np.zeros(3)
+
+                x_f.append(x_cur)
+                traj.append(x_cur[0:3])
+                flag -= 1
+            else:
+                x_new = ftr.EKF(x_f[iter], y_k)
+                x_f.append(x_new)
+                traj.append(x_new[0:3])
+
+            iter += 1
+
+        v_mean, v_sigma, curvature = pp.get_traj_params(traj)
+
+        C = 0
+        if name == "human":
+            C = 1
+        elif name == "dolphin":
+            C = 2
+        elif name == "drone":
+            C = 3
+
+        Y.append(C)
+        X.append([x_size, y_size, z_size, v_mean, v_sigma, curvature])
+
+    model = pickle.load(open('models/svm/svm_rfb_united_concat_1_10.bin', 'rb'))
+    score = model.score(X, Y)
+    print('model evaluated with score = ' + str(score))
+
+    return score
 
 
 #Main code in launched here
@@ -575,9 +746,9 @@ sigma_angle = np.pi / 8
 n_points = 20
 n_trajs = 100
 
-angle = 1
+angle = 10
 #generate_dataset_morphologic(angle, env, objs, robot)
-generate_dataset_united(angle, env, objs, robot, n_points, n_trajs)
+#generate_dataset_united(angle, env, objs, robot, n_points, n_trajs)
 
 sonars = create_transducers(-180, 170, -4, 4, angle, 0.1)
 print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) + ' = ' + str(len(sonars)*len(sonars[0])) + ' sonars')
@@ -585,9 +756,17 @@ print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) 
 #robot.set_transducers(sonars)
 
 #single_measure_test(env, sonars, objs, robot, [0, 6.5, 0, 6.5])
-sigma = sonars[0][0].get_sigma()
-dataset = pickle.load(open('datasets/synthetic/united/united_validate_1.bin', 'rb'))
-extract_features(dataset, sigma)
+#sigma = sonars[0][0].get_sigma()
+#dataset = pickle.load(open('datasets/synthetic/united/united_10.bin', 'rb'))
+#extract_features(dataset, sigma)
+
+scores = []
+for a in range(1, 16):
+    score = validate(a, env, objs, robot, n_points, n_trajs)
+    scores.append(np.array([a, score]))
+
+np.savetxt('datasets/synthetic/united/scores_concat_1_10.txt', scores, delimiter=' ')
+print('scores saved successfully')
         
 traj_rotate = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')
 traj_linear = np.loadtxt('trajectories/traj_linear_right_down_diag.txt', delimiter=' ')
