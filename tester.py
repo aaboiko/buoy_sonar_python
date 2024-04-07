@@ -14,6 +14,9 @@ from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
 from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D, CTKalmanFilter_7D, DubinsKalmanFilter
 
+from sklearn import model_selection
+from sklearn import linear_model, svm
+
 SONAR_MAX_RANGE = 150
 T = 0.1
 
@@ -444,11 +447,11 @@ def generate_dataset_united(angle, env, objs, robot, traj_len, num_trajs):
             dataset.append(data_obj)
 
     print('generating completed. Saving...')
-    pickle.dump(dataset, open('datasets/synthetic/united/united_10.bin', 'wb'))
+    pickle.dump(dataset, open('datasets/synthetic/united/united_to_concat_' + str(angle) + '.bin', 'wb'))
     print('saved succesfully')
 
 
-def extract_features(dataset, sigma, ftr_type='cv'):
+def extract_features(angle, dataset, sigma, ftr_type='cv'):
     res_arr = []
     n = len(dataset)
     prev = -1
@@ -545,7 +548,7 @@ def extract_features(dataset, sigma, ftr_type='cv'):
         res_arr.append(write_obj)
 
     print('feature extracting completed. Saving...')
-    pickle.dump(res_arr, open('datasets/synthetic/united/features_10.bin', 'wb'))
+    pickle.dump(res_arr, open('datasets/synthetic/united/features_to_concat_' + str(angle) + '.bin', 'wb'))
     print('saved succesfully')
 
 
@@ -713,11 +716,77 @@ def validate(angle, env, objs, robot, traj_len, num_trajs, ftr_type='cv'):
         Y.append(C)
         X.append([x_size, y_size, z_size, v_mean, v_sigma, curvature])
 
-    model = pickle.load(open('models/svm/svm_rfb_united_concat_1_10.bin', 'rb'))
+    model = pickle.load(open('models/svm/svm_rfb_united_concat_all.bin', 'rb'))
     score = model.score(X, Y)
     print('model evaluated with score = ' + str(score))
 
     return score
+
+
+def fit_model(angles, all=False):
+    features = []
+
+    for a in angles:
+        fts = pickle.load(open('datasets/synthetic/united/features_to_concat_' + str(a) + '.bin', 'rb'))
+        features = features + fts
+
+    n = len(features) 
+
+    names = []
+    x_sizes = []
+    y_sizes = []
+    z_sizes = []
+    v_means = []
+    v_sigmas = []
+    curvatures = []
+
+    for obj in features:
+        name = obj["name"]
+        x_size = obj["x_size"]
+        y_size = obj["y_size"]
+        z_size = obj["z_size"]
+        v_mean = obj["v_mean"]
+        v_sigma = obj["v_sigma"]
+        curvature = obj["curvature"]
+
+        names.append(name)
+        x_sizes.append(x_size)
+        y_sizes.append(y_size)
+        z_sizes.append(z_size)
+        v_means.append(v_mean)
+        v_sigmas.append(v_sigma)
+        curvatures.append(curvature)
+
+    X = []
+    Y = []
+
+    for i in range(n):
+        name = names[i]
+        x_size = x_sizes[i]
+        y_size = y_sizes[i]
+        z_size = z_sizes[i]
+        v_mean = v_means[i]
+        v_sigma = v_sigmas[i]
+        curvature = curvatures[i]
+
+        C = 0
+        if name == "human":
+            C = 1
+        elif name == "dolphin":
+            C = 2
+        elif name == "drone":
+            C = 3
+
+        Y.append(C)
+        X.append([x_size, y_size, z_size, v_mean, v_sigma, curvature])
+
+    model_rfb = svm.SVC(kernel='rbf', gamma=0.5, C=10)
+    model_rfb.fit(X, Y)
+
+    if not all:
+        pickle.dump(model_rfb, open('models/svm/svm_rfb_united_' + str(angles[0]) + '.bin', 'wb'))
+    else:
+        pickle.dump(model_rfb, open('models/svm/svm_rfb_united_concat_all.bin', 'wb'))
 
 
 #Main code in launched here
@@ -760,12 +829,22 @@ print('sonars massive created: ' + str(len(sonars)) + 'x' + str(len(sonars[0])) 
 #dataset = pickle.load(open('datasets/synthetic/united/united_10.bin', 'rb'))
 #extract_features(dataset, sigma)
 
+'''for a in range(1, 16):
+    generate_dataset_united(a, env, objs, robot, n_points, n_trajs)
+    sigma = sonars[0][0].get_sigma()
+    dataset = pickle.load(open('datasets/synthetic/united/united_to_concat_' + str(a) + '.bin', 'rb'))
+    extract_features(a, dataset, sigma)
+    fit_model([a])
+
+angles = [i for i in range(1, 16)]
+fit_model(angles, all=True)'''
+
 scores = []
 for a in range(1, 16):
     score = validate(a, env, objs, robot, n_points, n_trajs)
     scores.append(np.array([a, score]))
 
-np.savetxt('datasets/synthetic/united/scores_concat_1_10.txt', scores, delimiter=' ')
+np.savetxt('datasets/synthetic/united/scores_concat_all.txt', scores, delimiter=' ')
 print('scores saved successfully')
         
 traj_rotate = np.loadtxt('trajectories/traj_ellipse_rotate.txt', delimiter=' ')

@@ -52,3 +52,39 @@ class Transducer:
         self.amplitude = 0
 
     
+class SingleSonar:
+    def __init__(self, angle, n, sigma_r=0.5, sigma_a=0):
+        self.angle = angle
+        self.sigma_r = sigma_r
+        self.sigma_a = sigma_a
+        self.sigma_angle = self.angle / (3 * np.sqrt(2))
+        self.rays = self.generate_rays(angle, n)
+
+
+    def generate_rays(self, angle, n):
+        rays = []
+
+        for y in np.linspace(-angle/2, angle/2, n):
+            for x in np.linspace(-angle/2, angle/2, n):
+                if x**2 + y**2 <= (angle/2)**2:
+                    ray = {
+                        "k": self.diagram(angle),
+                        "phi": y,
+                        "theta": x
+                    }
+
+                    rays.append(ray)
+
+        return rays
+
+
+    def diagram(self, angle):
+        return np.exp(-(angle**2) / (2 * self.sigma_angle**2))
+    
+
+    def get_rays(self):
+        return self.rays
+    
+
+    def set_rays(self, rays):
+        self.rays = rays
