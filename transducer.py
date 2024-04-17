@@ -53,15 +53,20 @@ class Transducer:
 
     
 class SingleSonar:
-    def __init__(self, angle, n, sigma_r=0.5, sigma_a=0):
+    def __init__(self, pan, tilt, angle, n, sigma_r=0.5, sigma_a=0):
         self.angle = angle
         self.sigma_r = sigma_r
         self.sigma_a = sigma_a
+        self.r_step = 0.5
         self.sigma_angle = self.angle / (3 * np.sqrt(2))
-        self.rays = self.generate_rays(angle, n)
+        self.rays = self.generate_rays(pan, tilt, angle, n)
+
+        self.r = 150
+        self.a = 0
+        self.meas = dict()
 
 
-    def generate_rays(self, angle, n):
+    def generate_rays(self, pan, tilt, angle, n):
         rays = []
 
         for y in np.linspace(-angle/2, angle/2, n):
@@ -69,8 +74,9 @@ class SingleSonar:
                 if x**2 + y**2 <= (angle/2)**2:
                     ray = {
                         "k": self.diagram(angle),
-                        "phi": y,
-                        "theta": x
+                        "phi": tilt + y,
+                        "theta": pan + x,
+                        "r": 150
                     }
 
                     rays.append(ray)
@@ -88,3 +94,18 @@ class SingleSonar:
 
     def set_rays(self, rays):
         self.rays = rays
+
+
+    def set_value(self, r, a, meas):
+        self.r = r + np.random.normal(0, self.sigma_r)
+        self.a = a + np.random.normal(0, self.sigma_a)
+        self.meas = meas
+
+
+    def reset(self):
+        for ray in self.rays:
+            ray["r"] = 150
+
+        self.r = 150
+        self.a = 0
+        self.meas = dict()
