@@ -63,17 +63,29 @@ class SingleSonar:
 
         self.r = 150
         self.a = 0
+        self.pan = pan
+        self.tilt = tilt
         self.meas = dict()
 
 
     def generate_rays(self, pan, tilt, angle, n):
+        print('generating rays started. Pan = ' + str(pan) + ', tilt = ' + str(tilt) + ', angle = ' + str(angle))
         rays = []
+        progress = 0
+        prev = 0
+        iter = 0
 
         for y in np.linspace(-angle/2, angle/2, n):
             for x in np.linspace(-angle/2, angle/2, n):
+                progress = int(100 * iter / (n**2))
+                if progress > prev:
+                    print('generating rays in progress: ' + str(progress) + '%')
+                    prev = progress
+                iter += 1
+
                 if x**2 + y**2 <= (angle/2)**2:
                     ray = {
-                        "k": self.diagram(angle),
+                        "k": self.diagram(np.sqrt(x**2 + y**2)) / (n**2 * np.pi/4),
                         "phi": tilt + y,
                         "theta": pan + x,
                         "r": 150
@@ -90,6 +102,10 @@ class SingleSonar:
 
     def get_rays(self):
         return self.rays
+    
+
+    def get_pan_tilt(self):
+        return self.pan, self.tilt
     
 
     def set_rays(self, rays):
@@ -109,3 +125,45 @@ class SingleSonar:
         self.r = 150
         self.a = 0
         self.meas = dict()
+
+
+    def get_r_from_meas(self, meas):
+        res = 0
+        amax = 0
+
+        for i in np.arange(0, 150, 0.5):
+            if meas[i] > amax:
+                amax = meas[i]
+                res = i
+
+        return res
+    
+
+    def get_a_from_meas(self, meas):
+        a = 0
+
+        for i in np.arange(0, 150, 0.5):
+            a += meas[i]
+
+        return a
+
+
+    def get_arl_from_meas(self, meas):
+        a = 0
+        r = 0
+        amax = 0
+        l = 0
+
+        for i in np.arange(0, 150, 0.5):
+            a += meas[i]
+            if meas[i] > amax:
+                amax = meas[i]
+                r = i
+
+        for i in np.arange(r, 150, 0.5):
+            if meas[i] > 0:
+                l += 0.5
+            else:
+                break
+
+        return a, r, l

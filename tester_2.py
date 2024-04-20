@@ -22,7 +22,7 @@ T = 0.1
 
 def create_transducers(n_sonars, n_rays):
     transducers = []
-    step = 360 // n_sonars
+    step = 360.0 / n_sonars
 
     for i in range(n_sonars):
         transducer = SingleSonar(i * step, 0, step, n_rays)
@@ -31,7 +31,17 @@ def create_transducers(n_sonars, n_rays):
     return transducers
 
 
-def draw_scene(objs, angle):
+def create_sonars_by_pan(pans, angle, n_rays):
+    sonars = []
+
+    for pan in pans:
+        sonar = SingleSonar(pan, 0, angle, n_rays)
+        sonars.append(sonar)
+
+    return sonars
+
+
+def draw_scene(objs, angle, ray_len):
     angle = np.deg2rad(angle)
 
     for obj in objs:
@@ -40,8 +50,8 @@ def draw_scene(objs, angle):
         ellipse.set_alpha(0.25)
         plt.gca().add_artist(ellipse)
 
-    x_end = SONAR_MAX_RANGE * np.cos(angle/2)
-    y_end = SONAR_MAX_RANGE * np.sin(angle/2)
+    x_end = ray_len * np.cos(angle/2)
+    y_end = ray_len * np.sin(angle/2)
     plt.plot([0, x_end], [0, y_end], 'r-', color='blue')
     plt.plot([0, x_end], [0, -y_end], 'r-', color='blue')
 
@@ -53,7 +63,7 @@ def visualize_measures(meas):
     aa = []
     rr = []
 
-    for i in np.arange(0, SONAR_MAX_RANGE, sonar.r_step):
+    for i in np.arange(0, SONAR_MAX_RANGE, 0.5):
         rr.append(i)
         aa.append(meas[i])
         
@@ -132,40 +142,200 @@ def single_sonar_measure(sonar, obj, robot_xyz, robot_rpy, visualize=False):
     if visualize:
         plt.show()
 
-    return r, a, meas
+    return r_res, a, meas
 
 
-def measure(sonars, objs, robot_pose):
-    measurements = []
+def measure(sonars, obj, robot_pose):
+    cloud = []
+    meas_arrays = []
     robot_xyz = robot_pose[0:3]
     robot_rpy = robot_pose[3:6]
 
     for sonar in sonars:
         sonar.reset()
-        angle = np.deg2rad(sonar.angle)
+        pan, tilt = sonar.get_pan_tilt()
+        sigma = sonar.sigma_angle
+        sigma_r = sonar.sigma_r
+        theta = np.deg2rad(pan) + np.deg2rad(np.random.normal(0, sigma))
+        phi = np.deg2rad(tilt) + np.deg2rad(np.random.normal(0, sigma))
 
-        for obj in objs:
-            r, a, meas = single_sonar_measure(sonar, obj, robot_xyz, robot_rpy)
-            sonar.set_value(r, a, meas)
+        r, a, meas = single_sonar_measure(sonar, obj, robot_xyz, robot_rpy)
+        r += np.random.normal(0, sigma_r)
+        p_cart_local = tf.spherical_to_cart(np.array([r, phi, theta]))
+        p_cart_global = tf.local_to_world(p_cart_local, robot_pose)
+
+        sonar.set_value(r, a, meas)
+        cloud.append(p_cart_global)
+        meas_arrays.append(meas)
+
+    return cloud, meas_arrays
+
+
+def get_arl_from_meas(meas):
+    a = 0
+    r = 0
+    amax = 0
+    l = 0
+
+    for i in np.arange(0, 150, 0.5):
+        a += meas[i]
+        if meas[i] > amax:
+            amax = meas[i]
+            r = i
+
+    for i in np.arange(r, 150, 0.5):
+        if meas[i] > 0:
+            l += 0.5
+        else:
+            break
+
+    return a, r, l
+
+            
+def generate_dataset(angle, env, objs, robot, traj_len, num_trajs, num_rays, pans):
+    dataset = []
+    n = len(objs) * num_trajs
+
+    for obj in objs:
+        if obj.name == 'sphere':
+            v_mean = 1
+            sigma_v = 0.1
+            sigma_angle = 0
+        if obj.name == 'human':
+            v_mean = 1
+            sigma_v = 0.3
+            sigma_angle = np.pi / 10
+        if obj.name == 'dolphin':
+            v_mean = 5
+            sigma_v = 1
+            sigma_angle = np.pi / 8
+        if obj.name == 'drone':
+            v_mean = 10
+            sigma_v = 1
+            sigma_angle = 0
+
+        prev = -1
+
+        for i in range(num_trajs):
+            progress = int(100 * i / num_trajs)
+            if progress > prev:
+                print('in progress for: ' + obj.name + ' ' + str(progress) + '%')
+                prev = progress
+
+            x_start = np.random.uniform(20, 30)
+            y_start = np.random.uniform(20, 30)
+            start = np.array([x_start, y_start, 0])
+            angle_start = np.random.uniform(0, 2 * np.pi)
+            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, traj_len)
+
+            clouds = []
+            graph_meas = []
+            iter = 0
+
+            for point in traj:
+                print('processing point #' + str(iter) + ' ' + str(point))
+                iter += 1
+
+                env.clear()
+                env.add_object(obj)
+                obj.set_pose(point)
+
+                sonars = create_sonars_by_pan(pans, angle, num_rays)
+                robot.set_transducers(sonars)
+
+                robot_pose = robot.get_pose()
+                cloud, meas_arrays = measure(sonars, obj, robot_pose)
+
+                clouds.append(cloud)
+                graph_meas.append(meas_arrays)
+
+            data_obj = {
+                "name": obj.name,
+                "clouds": clouds,
+                "graph_meas": graph_meas
+            }
+
+            dataset.append(data_obj)
+
+    print('generating completed. Saving...')
+    pickle.dump(dataset, open('datasets/synthetic/single/single_1.bin', 'wb'))
+    print('saved succesfully')
+
+
+def extract_features(dataset, sigma):
+    res_arr = []
+    n = len(dataset)
+    prev = -1
+    step = 0
+
+    for data_obj in dataset:
+        progress = int(100 * step / n)
+        if progress > prev:
+            print('feature extractor is in progress: ' + str(progress) + '%')
+            prev = progress
+
+        name = data_obj["name"]
+        clouds = data_obj["clouds"]
+        graph_meas = data_obj["graph_meas"]
+
+        #extracting features from clouds
+        x_size, y_size, z_size = pp.get_mean_size(pp, clouds)
+
+        iter = -2
+        step += 1
+
+        ftr = CVKalmanFilter(sigma)
+        x_cur = np.array([0, 0, 0, 1, 1, 0])
+
+        x_f = []
+        traj = []
+        flag = 2
+        clouds_len = len(clouds)
+        cloud_step = 0
+
+        for cloud in clouds:
+            cloud_step += 1
+            com = pp.center_of_mass(cloud)
+            print('cloud is processing: ' + str(cloud_step) + '/' + str(clouds_len))
+            y_k = com
+
+            if flag == 2:
+                x_cur[0:3] = com
+                flag -= 1
+            elif flag == 1:
+                x_cur[3:6] = com - x_cur[0:3]
+                x_f.append(x_cur)
+                traj.append(x_cur[0:3])
+                flag -= 1
+            else:
+                x_new = ftr.EKF(x_f[iter], y_k)
+                x_f.append(x_new)
+                traj.append(x_new[0:3])
+
+            iter += 1
+
+        v_mean, v_sigma, curvature = pp.get_traj_params(traj)
+
+        #extracting features from single sonar data
+        for meas_arrays in graph_meas:
+            for meas in meas_arrays:
+                a, r, l = get_arl_from_meas(meas)
+            
 
 
 #Main code in launched here
 
 env = Environment()
 robot = Robot()
-obj = Ellipsoid(20, 30, 20, np.array([100, 0, 0, np.pi/4, 0, 0]), name='sphere')
-sonar  = SingleSonar(0, 0, 45, 500)
+obj = Ellipsoid(100, 10, 10, np.array([100, 0, 0, np.pi/2, 0, 0]), name='sphere')
+#sonar  = SingleSonar(0, 0, 15, 500)
 
-r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
-print(meas[4.5])
-aa = []
-rr = []
+#r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
 
-for i in np.arange(0, SONAR_MAX_RANGE, sonar.r_step):
-    rr.append(i)
-    aa.append(meas[i])
+#visualize_measures(meas)
+#draw_scene([obj], 15, 20)
+pans = [0]
+#pans = [-15, 0, 15, 30, 45, 60, 75]
+sonars = create_sonars_by_pan(pans, 15, 300)
 
-plt.plot(rr, aa)
-plt.show()
 
-draw_scene([obj], 45)
