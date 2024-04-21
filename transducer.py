@@ -67,6 +67,9 @@ class SingleSonar:
         self.tilt = tilt
         self.meas = dict()
 
+        self.n_side = n
+        self.angle_step = self.angle / (self.n_side - 1)
+
 
     def generate_rays(self, pan, tilt, angle, n):
         print('generating rays started. Pan = ' + str(pan) + ', tilt = ' + str(tilt) + ', angle = ' + str(angle))
@@ -76,6 +79,8 @@ class SingleSonar:
         iter = 0
 
         for y in np.linspace(-angle/2, angle/2, n):
+            rays_row = []
+
             for x in np.linspace(-angle/2, angle/2, n):
                 progress = int(100 * iter / (n**2))
                 if progress > prev:
@@ -83,15 +88,17 @@ class SingleSonar:
                     prev = progress
                 iter += 1
 
-                if x**2 + y**2 <= (angle/2)**2:
-                    ray = {
-                        "k": self.diagram(np.sqrt(x**2 + y**2)) / (n**2 * np.pi/4),
-                        "phi": tilt + y,
-                        "theta": pan + x,
-                        "r": 150
-                    }
+                
+                ray = {
+                    "k": self.diagram(np.sqrt(x**2 + y**2)) / (n**2 * np.pi/4),
+                    "phi": tilt + y,
+                    "theta": pan + x,
+                    "r": 150
+                }
 
-                    rays.append(ray)
+                rays_row.append(ray)
+
+            rays.append(rays_row)
 
         return rays
 
@@ -119,8 +126,9 @@ class SingleSonar:
 
 
     def reset(self):
-        for ray in self.rays:
-            ray["r"] = 150
+        for rays_row in self.rays:
+            for ray in rays_row:
+                ray["r"] = 150
 
         self.r = 150
         self.a = 0

@@ -71,6 +71,23 @@ def visualize_measures(meas):
     plt.show()
 
 
+def animate_measures(data):
+    for meas in data:
+        aa = []
+        rr = []
+
+        for i in np.arange(0, SONAR_MAX_RANGE, 0.5):
+            rr.append(i)
+            aa.append(meas[i])
+            
+        plt.plot(rr, aa)
+        plt.axis([0, 150, 0, 0.1])
+        plt.pause(1)
+        plt.clf()
+
+    plt.show()
+
+
 def measure_ellipsoid(axis, center, bias, A):
     ax, ay, az = axis
     xb, yb, zb = bias - center
@@ -99,7 +116,6 @@ def measure_ellipsoid(axis, center, bias, A):
 
 def single_sonar_measure(sonar, obj, robot_xyz, robot_rpy, visualize=False):
     rays = sonar.get_rays()
-    n = len(rays)
     a = 0
     r_res = SONAR_MAX_RANGE
     
@@ -111,33 +127,86 @@ def single_sonar_measure(sonar, obj, robot_xyz, robot_rpy, visualize=False):
     prev = 0
     iter = 0
 
-    for ray in rays:
-        progress = int(100 * iter / n)
+    center = obj.center
+    obj_size = max(obj.a, max(obj.b, obj.c))
+    angle_thres = np.arctan2(obj_size, np.linalg.norm(center))
 
-        if progress > prev:
-            print('single sonar measure in progress: ' + str(progress) + '%')
-            prev = progress
-        iter += 1
+    sonar_pan, sonar_tilt = sonar.get_pan_tilt()
+    sonar_axis_ = tf.spherical_to_cart(np.array([1, np.deg2rad(sonar_tilt), np.deg2rad(sonar_pan)]))
+    sonar_axis = tf.rotate_vector(sonar_axis_, robot_rpy)
 
-        tilt = ray["phi"]
-        pan = ray["theta"]
-        k = ray["k"]
+    if tf.angle_between_vectors(sonar_axis, center) > np.deg2rad(sonar.angle / 2):
+        print('The object is out of sonar area')
+        return r_res, a, meas
+    
+    center_r, center_phi, center_theta = tf.cart_to_spherical(center)
+    center_pan = np.rad2deg(center_theta)
+    center_tilt = np.rad2deg(center_phi)
+    pan_min = center_pan - np.rad2deg(angle_thres)
+    pan_max = center_pan + np.rad2deg(angle_thres)
+    tilt_min = center_tilt - np.rad2deg(angle_thres)
+    tilt_max = center_tilt + np.rad2deg(angle_thres)
 
-        phi = np.deg2rad(tilt)
-        theta = np.deg2rad(pan)
-        a_loc = tf.spherical_to_cart(np.array([1, phi, theta]))
-        a_world = tf.rotate_vector(a_loc, robot_rpy)
+    if pan_min < -sonar.angle / 2:
+        pan_min = -sonar.angle / 2
+    if pan_max > sonar.angle / 2:
+        pan_max = sonar.angle / 2
+    if tilt_min < -sonar.angle / 2:
+        tilt_min = -sonar.angle / 2
+    if tilt_max > sonar.angle / 2:
+        tilt_max = sonar.angle / 2
 
-        center = obj.center
-        r = measure_ellipsoid(a_world, center, robot_xyz, obj.A)
+    '''print('pan min: ' + str(pan_min))
+    print('pan max: ' + str(pan_max))
+    print('tilt min: ' + str(tilt_min))
+    print('tilt max: ' + str(tilt_max))'''
 
-        a += k
-        r_res = min(r_res, r)
-        if r <= SONAR_MAX_RANGE:
-            meas[int(r // sonar.r_step) * sonar.r_step] += k
+    i_min = int((tilt_min + sonar.angle / 2) // sonar.angle_step)
+    i_max = int((tilt_max + sonar.angle / 2) // sonar.angle_step)
+    j_min = int((pan_min + sonar.angle / 2) // sonar.angle_step)
+    j_max = int((pan_max + sonar.angle / 2) // sonar.angle_step)
 
-        if visualize and r < SONAR_MAX_RANGE:
-            plt.scatter(theta, phi, s=1, color='blue')
+    '''print('i min: ' + str(i_min))
+    print('i max: ' + str(i_max))
+    print('j min: ' + str(j_min))
+    print('j max: ' + str(j_max))'''
+
+    n = (i_max - i_min) * (j_max - j_min)
+
+    for i in range(i_min, i_max):
+        for j in range(j_min, j_max):
+            progress = int(100 * iter / n)
+
+            if progress > prev:
+                print('single sonar measure in progress: ' + str(progress) + '%')
+                prev = progress
+            iter += 1
+
+            tilt = rays[i][j]["phi"]
+            pan = rays[i][j]["theta"]
+            k = rays[i][j]["k"]
+
+            phi = np.deg2rad(tilt)
+            theta = np.deg2rad(pan)
+            a_loc = tf.spherical_to_cart(np.array([1, phi, theta]))
+            a_world = tf.rotate_vector(a_loc, robot_rpy)
+
+            angle_between = tf.angle_between_vectors(a_world, center)
+
+            #print('between: ' + str(np.rad2deg(angle_between)) + ', thres: ' + str(np.rad2deg(angle_thres)))
+
+            if angle_between > angle_thres:
+                continue
+
+            r = measure_ellipsoid(a_world, center, robot_xyz, obj.A)
+
+            a += k
+            r_res = min(r_res, r)
+            if r <= SONAR_MAX_RANGE:
+                meas[int(r // sonar.r_step) * sonar.r_step] += k
+
+            if visualize and r < SONAR_MAX_RANGE:
+                plt.scatter(theta, phi, s=1, color='blue')
 
     if visualize:
         plt.show()
@@ -191,8 +260,43 @@ def get_arl_from_meas(meas):
 
     return a, r, l
 
+
+def move_traj_and_save_meas(traj, robot, obj, sonar, datapath):
+    data = []
+    ind = 0
+
+    for point in traj:
+        print('processing traj point #' + str(ind) + '/' + str(traj.shape[0]))
+        ind += 1
+        obj.set_pose(point)
+        r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
+        data.append(meas)
+
+    print('saving...')
+    pickle.dump(data, open(datapath, 'wb'))
+    print('saved')
+
+
+def move_traj(traj, robot, obj, sonar):
+    for point in traj:
+        obj.set_pose(point)
+        r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
+
+        aa = []
+        rr = []
+
+        for i in np.arange(0, SONAR_MAX_RANGE, 0.5):
+            rr.append(i)
+            aa.append(meas[i])
+        
+        plt.clf()
+        plt.plot(rr, aa)
+        plt.pause(0.01)
+
+    plt.show()
+
             
-def generate_dataset(angle, env, objs, robot, traj_len, num_trajs, num_rays, pans):
+def generate_dataset(sonars, env, objs, robot, traj_len, num_trajs, x_start_bounds, y_start_bounds):
     dataset = []
     n = len(objs) * num_trajs
 
@@ -222,8 +326,11 @@ def generate_dataset(angle, env, objs, robot, traj_len, num_trajs, num_rays, pan
                 print('in progress for: ' + obj.name + ' ' + str(progress) + '%')
                 prev = progress
 
-            x_start = np.random.uniform(20, 30)
-            y_start = np.random.uniform(20, 30)
+            x_start_min, x_start_max = x_start_bounds
+            y_start_min, y_start_max = y_start_bounds
+
+            x_start = np.random.uniform(x_start_min, x_start_max)
+            y_start = np.random.uniform(y_start_min, y_start_max)
             start = np.array([x_start, y_start, 0])
             angle_start = np.random.uniform(0, 2 * np.pi)
             traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, traj_len)
@@ -240,8 +347,8 @@ def generate_dataset(angle, env, objs, robot, traj_len, num_trajs, num_rays, pan
                 env.add_object(obj)
                 obj.set_pose(point)
 
-                sonars = create_sonars_by_pan(pans, angle, num_rays)
-                robot.set_transducers(sonars)
+                #sonars = create_sonars_by_pan(pans, angle, num_rays)
+                #robot.set_transducers(sonars)
 
                 robot_pose = robot.get_pose()
                 cloud, meas_arrays = measure(sonars, obj, robot_pose)
@@ -327,15 +434,32 @@ def extract_features(dataset, sigma):
 
 env = Environment()
 robot = Robot()
-obj = Ellipsoid(100, 10, 10, np.array([100, 0, 0, np.pi/2, 0, 0]), name='sphere')
-#sonar  = SingleSonar(0, 0, 15, 500)
+#obj = Ellipsoid(0.3, 0.3, 0.3, np.array([100, 100*np.tan(np.deg2rad(7.5)) + 0, 0, 0, 0, 0]), name='sphere')
 
+objs = [
+    #Ellipsoid(1, 1, 1, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
+    #Ellipsoid(0.5, 3, 0.5, np.array([3, 3, 0, 0, 0, 0])),   #for spinning
+
+    Ellipsoid(1, 1, 1, np.array([3, 3, 0, 0, 0, 0]), name='sphere'),
+    Ellipsoid(0.9, 0.4, 0.4, np.array([3, 3, 0, 0, 0, 0]), name='human'),
+    Ellipsoid(1.5, 0.5, 0.5, np.array([3, 3, 0, 0, 0, 0]), name='dolphin'),
+    Ellipsoid(3, 1, 1.5, np.array([3, 3, 0, 0, 0, 0]), name='drone')
+]
+
+sonar  = SingleSonar(0, 0, 15, 500)
 #r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
 
 #visualize_measures(meas)
 #draw_scene([obj], 15, 20)
-pans = [0]
-#pans = [-15, 0, 15, 30, 45, 60, 75]
+#pans = [0]
+pans = [30, 45, 60]
 sonars = create_sonars_by_pan(pans, 15, 300)
 
+#traj = np.loadtxt('trajectories/traj_linear_diag.txt', delimiter=' ')
+#datapath = 'datasets/synthetic/single/utils/diag.bin'
 
+#move_traj(traj, robot, obj, sonar)
+
+#data = pickle.load(open(datapath, 'rb'))
+
+generate_dataset(sonars, env, objs, robot, 20, 100, [20, 30], [20, 30])
