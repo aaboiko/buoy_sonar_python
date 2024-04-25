@@ -548,6 +548,186 @@ def extract_features(dataset, sigma, index):
     pickle.dump(res_arr, open('datasets/synthetic/single/features_' + str(index) + '.bin', 'wb'))
     print('saved succesfully')
 
+
+def fit_model(features):
+    n = len(features) 
+
+    names = []
+    x_sizes = []
+    y_sizes = []
+    z_sizes = []
+    v_means = []
+    v_sigmas = []
+    curvatures = []
+    l_means = []
+    r_dot_means = []
+    a_dot_means = []
+    r_dot_sigmas = []
+    a_dot_sigmas = []
+
+    for obj in features:
+        name = obj["name"]
+        x_size = obj["x_size"]
+        y_size = obj["y_size"]
+        z_size = obj["z_size"]
+        v_mean = obj["v_mean"]
+        v_sigma = obj["v_sigma"]
+        curvature = obj["curvature"]
+        l_mean = obj["l_mean"]
+        r_dot_mean = obj["r_dot_mean"]
+        a_dot_mean = obj["a_dot_mean"]
+        r_dot_sigma = obj["r_dot_sigma"]
+        a_dot_sigma = obj["a_dot_sigma"]
+
+        names.append(name)
+        x_sizes.append(x_size)
+        y_sizes.append(y_size)
+        z_sizes.append(z_size)
+        v_means.append(v_mean)
+        v_sigmas.append(v_sigma)
+        curvatures.append(curvature)
+        l_means.append(l_mean)
+        r_dot_means.append(r_dot_mean)
+        a_dot_means.append(a_dot_mean)
+        r_dot_sigmas.append(r_dot_sigma)
+        a_dot_sigmas.append(a_dot_sigma)
+
+    X = []
+    Y = []
+
+    for i in range(n):
+        name = names[i]
+        x_size = x_sizes[i]
+        y_size = y_sizes[i]
+        z_size = z_sizes[i]
+        v_mean = v_means[i]
+        v_sigma = v_sigmas[i]
+        curvature = curvatures[i]
+        l_mean = l_means[i]
+        r_dot_mean = r_dot_means[i]
+        a_dot_mean = a_dot_means[i]
+        r_dot_sigma = r_dot_sigmas[i]
+        a_dot_sigma = a_dot_sigmas[i]
+
+        C = 0
+        if name == "human":
+            C = 1
+        elif name == "dolphin":
+            C = 2
+        elif name == "drone":
+            C = 3
+
+        Y.append(C)
+        X.append([l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma])
+
+    model_rfb = svm.SVC(kernel='rbf', gamma=0.5, C=10)
+    model_rfb.fit(X, Y)
+
+    pickle.dump(model_rfb, open('models/svm/svm_single_1.bin', 'wb'))
+
+
+def validate(model, num_trajs, traj_len, env, objs, robot, angle, num_rays, pans, x_start_bounds, y_start_bounds):
+    #dataset generating
+    dataset = []
+    n = len(objs) * num_trajs
+
+    for obj in objs:
+        if obj.name == 'sphere':
+            v_mean = 1
+            sigma_v = 0.1
+            sigma_angle = 0
+        if obj.name == 'human':
+            v_mean = 1
+            sigma_v = 0.3
+            sigma_angle = np.pi / 10
+        if obj.name == 'dolphin':
+            v_mean = 5
+            sigma_v = 1
+            sigma_angle = np.pi / 8
+        if obj.name == 'drone':
+            v_mean = 10
+            sigma_v = 1
+            sigma_angle = 0
+
+        prev = -1
+
+        for i in range(num_trajs):
+            progress = int(100 * i / num_trajs)
+            if progress > prev:
+                print('dataset creation in progress for: ' + obj.name + ' ' + str(progress) + '%')
+                prev = progress
+
+            x_start_min, x_start_max = x_start_bounds
+            y_start_min, y_start_max = y_start_bounds
+
+            x_start = np.random.uniform(x_start_min, x_start_max)
+            y_start = np.random.uniform(y_start_min, y_start_max)
+            start = np.array([x_start, y_start, 0])
+            angle_start = np.random.uniform(0, 2 * np.pi)
+            traj = env.generate_random_trajectory(start, angle_start, v_mean, sigma_v, sigma_angle, traj_len)
+
+            graph_meas = []
+            iter = 0
+
+            for point in traj:
+                print('processing point: ' + str(iter+1) + '/' + str(traj_len))
+                iter += 1
+
+                env.clear()
+                env.add_object(obj)
+                obj.set_pose(point)
+
+                sonars = create_sonars_by_pan(pans, angle, num_rays)
+                robot.set_transducers(sonars)
+
+                robot_pose = robot.get_pose()
+                cloud, meas_arrays = measure(sonars, obj, robot_pose)
+                graph_meas.append(meas_arrays)
+
+            data_obj = {
+                "name": obj.name,
+                "graph_meas": graph_meas
+            }
+
+            dataset.append(data_obj)
+
+    #feature extracting
+    n = len(dataset)
+    prev = -1
+    step = 0
+
+    X = []
+    Y = []
+
+    for data_obj in dataset:
+        progress = int(100 * step / n)
+        if progress > prev:
+            print('feature extractor is in progress: ' + str(progress) + '%')
+            prev = progress
+
+        name = data_obj["name"]
+        graph_meas = data_obj["graph_meas"]
+        l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma = get_params_from_meas(graph_meas)
+        step += 1
+
+        C = 0
+        if name == "human":
+            C = 1
+        elif name == "dolphin":
+            C = 2
+        elif name == "drone":
+            C = 3
+
+        Y.append(C)
+        X.append([l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma])
+
+    #prediction
+    score = model.score(X, Y)
+    print('model evaluated with score = ' + str(score))
+
+    return score
+
+
 #Main code in launched here
 
 env = Environment()
@@ -585,10 +765,20 @@ pans = [37.5, 52.5]
 
 #generate_dataset(sonars, env, objs, robot, 20, 100, [80, 90], [80, 90])
 
-dataset1 = pickle.load(open('datasets/synthetic/single/single_1.bin', 'rb'))
-dataset2 = pickle.load(open('datasets/synthetic/single/single_2.bin', 'rb'))
+#dataset1 = pickle.load(open('datasets/synthetic/single/single_1.bin', 'rb'))
+#dataset2 = pickle.load(open('datasets/synthetic/single/single_2.bin', 'rb'))
+#dataset12 = pickle.load(open('datasets/synthetic/single/single_12.bin', 'rb'))
 
-sigma_angle = 15 / (3 * np.sqrt(2))
+model = pickle.load(open('models/svm/svm_single_12.bin', 'rb'))
+scores = []
+
+for traj_len in range(1, 20):
+    score = validate(model, 20, traj_len, env, objs, robot, 15, 900, pans, [80, 90], [80, 90])
+    scores.append(score)
+
+np.savetxt('datasets/synthetic/single/scores_by_traj_len.txt', scores, delimiter=' ')
+
+'''sigma_angle = 15 / (3 * np.sqrt(2))
 
 sigma = np.array([[0.5**2, 0, 0, 0],
                 [0, sigma_angle**2, 0, 0],
@@ -596,7 +786,18 @@ sigma = np.array([[0.5**2, 0, 0, 0],
                 [0, 0, 0, 0**2]])
 
 extract_features(dataset1, sigma, 1)
-extract_features(dataset2, sigma, 2)
+extract_features(dataset2, sigma, 2)'''
+
+#features concatenation 1 + 2
+'''features1 = pickle.load(open('datasets/synthetic/single/features_1.bin', 'rb'))
+features2 = pickle.load(open('datasets/synthetic/single/features_2.bin', 'rb'))
+print(len(features1))
+print(len(features2))
+
+features12 = features1 + features2
+print(len(features12))
+pickle.dump(features12, open('datasets/synthetic/single/features_12.bin', 'wb'))'''
+##########################################################################
 
 '''for data_obj in dataset:
     aa1 = []
@@ -622,3 +823,4 @@ extract_features(dataset2, sigma, 2)
     print('a_dot_mean = ' + str(a_dot_mean))
     print('r_dot_sigma = ' + str(r_dot_sigma))
     print('a_dot_sigma = ' + str(a_dot_sigma))'''
+
