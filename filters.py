@@ -451,10 +451,34 @@ class DubinsKalmanFilter:
         return x_new
     
 
-class LinearApproximator:
-    def __init__(self):
-        pass
+class CVKalmanFilter_1D:
+    def __init__(self, sigma):
+        self.P_prev = (10^6) * np.ones(2)
+        
+        self.T = T
+        self.C = np.array([1, 0])
 
+        self.sigma_x = sigma
 
-    def approximate(self, points):
-        pass
+        self.Q = (T*self.sigma_x)**2 * np.eye(2)
+        
+        self.R = (T*self.sigma_x)**2
+        
+        self.A = np.array([[1, T],
+                           [0, 1]])
+
+    
+    def EKF(self, x_prev, y_k):
+        x = self.A @ x_prev
+        P = self.A @ self.P_prev @ self.A.T + self.Q
+        y_head = self.C @ x
+
+        y_tilda = y_k - y_head
+        S = self.C @ P @ self.C.T + self.R
+        F = P @ self.C.T * (1 / S)
+        x_head = x + F * y_tilda
+        P_new = (np.eye(2) - F @ self.C) @ P
+
+        self.P_prev = P_new
+
+        return x_head

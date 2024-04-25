@@ -12,8 +12,7 @@ from transform import Transform as tf
 from transducer import Transducer, SingleSonar
 from map import Map
 from pointcloud_processor import PointcloudProcessor as pp
-from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_7D, CTKalmanFilter_7D, DubinsKalmanFilter
-
+from filters import CTKalmanFilter, CVKalmanFilter, CVKalmanFilter_1D
 from sklearn import model_selection
 from sklearn import linear_model, svm
 
@@ -82,7 +81,7 @@ def animate_measures(data):
             
         plt.plot(rr, aa)
         plt.axis([0, 150, 0, 0.1])
-        plt.pause(1)
+        plt.pause(0.1)
         plt.clf()
 
     plt.show()
@@ -147,29 +146,30 @@ def single_sonar_measure(sonar, obj, robot_xyz, robot_rpy, visualize=False):
     tilt_min = center_tilt - np.rad2deg(angle_thres)
     tilt_max = center_tilt + np.rad2deg(angle_thres)
 
-    if pan_min < -sonar.angle / 2:
-        pan_min = -sonar.angle / 2
-    if pan_max > sonar.angle / 2:
-        pan_max = sonar.angle / 2
-    if tilt_min < -sonar.angle / 2:
-        tilt_min = -sonar.angle / 2
-    if tilt_max > sonar.angle / 2:
-        tilt_max = sonar.angle / 2
+    if pan_min < sonar_pan - sonar.angle / 2:
+        pan_min = sonar_pan - sonar.angle / 2
+    if pan_max > sonar_pan + sonar.angle / 2:
+        pan_max = sonar_pan + sonar.angle / 2
+    if tilt_min < sonar_tilt - sonar.angle / 2:
+        tilt_min = sonar_tilt - sonar.angle / 2
+    if tilt_max > sonar_tilt + sonar.angle / 2:
+        tilt_max = sonar_tilt + sonar.angle / 2
 
     '''print('pan min: ' + str(pan_min))
     print('pan max: ' + str(pan_max))
     print('tilt min: ' + str(tilt_min))
     print('tilt max: ' + str(tilt_max))'''
 
-    i_min = int((tilt_min + sonar.angle / 2) // sonar.angle_step)
-    i_max = int((tilt_max + sonar.angle / 2) // sonar.angle_step)
-    j_min = int((pan_min + sonar.angle / 2) // sonar.angle_step)
-    j_max = int((pan_max + sonar.angle / 2) // sonar.angle_step)
+    i_min = int((tilt_min - sonar_tilt + sonar.angle / 2) // sonar.angle_step)
+    i_max = int((tilt_max - sonar_tilt + sonar.angle / 2) // sonar.angle_step)
+    j_min = int((pan_min - sonar_pan + sonar.angle / 2) // sonar.angle_step)
+    j_max = int((pan_max - sonar_pan + sonar.angle / 2) // sonar.angle_step)
 
     '''print('i min: ' + str(i_min))
     print('i max: ' + str(i_max))
     print('j min: ' + str(j_min))
     print('j max: ' + str(j_max))'''
+
 
     n = (i_max - i_min) * (j_max - j_min)
 
@@ -210,7 +210,7 @@ def single_sonar_measure(sonar, obj, robot_xyz, robot_rpy, visualize=False):
 
     if visualize:
         plt.show()
-
+    print('r = ' + str(r_res) + ', a = ' + str(a))
     return r_res, a, meas
 
 
@@ -261,6 +261,56 @@ def get_arl_from_meas(meas):
     return a, r, l
 
 
+def get_params_from_meas(graph_meas):
+    n = len(graph_meas)
+    a_dots = []
+    r_dots = []
+
+    #1st moments
+    l_mean = 0
+    r_dot_mean = 0
+    a_dot_mean = 0
+
+    r_prev = 0
+    a_prev = 0
+
+    first = True
+
+    for meas_arrays in graph_meas:
+        a = 0
+        r = 0
+        l = 0
+
+        for meas in meas_arrays:
+            _a, _r, _l = get_arl_from_meas(meas)
+            a += _a
+            r = max(r, _r)
+            l = max(l, _l)
+
+        l_mean += l / n
+
+        if not first:
+            r_dot_mean += abs(r - r_prev) / (n - 1)
+            a_dot_mean += abs(a - a_prev) / (n - 1)
+            a_dots.append(abs(a - a_prev))
+            r_dots.append(abs(r - r_prev))
+
+        first = False
+        r_prev = r
+        a_prev = a
+
+    #2nd moments
+    r_dot_sigma = 0
+    a_dot_sigma = 0
+
+    for a_dot in a_dots:
+        a_dot_sigma += abs(a_dot - a_dot_mean) / (n - 1)
+    for r_dot in r_dots:
+        r_dot_sigma += abs(r_dot - r_dot_mean) / (n - 1)
+
+    return l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma
+
+
 def move_traj_and_save_meas(traj, robot, obj, sonar, datapath):
     data = []
     ind = 0
@@ -294,6 +344,57 @@ def move_traj(traj, robot, obj, sonar):
         plt.pause(0.01)
 
     plt.show()
+
+
+def draw_arl_from_time(dataset):
+    for data_obj in dataset:
+        aa1 = []
+        rr1 = []
+        ll1 = []
+        aa2 = []
+        rr2 = []
+        ll2 = []
+        aa3 = []
+        rr3 = []
+        ll3 = []
+        tt = [0.1 * i for i in range(len(data_obj["graph_meas"]))]
+
+        aa = []
+        rr = []
+        ll = []
+
+        for meas_arrays in data_obj["graph_meas"]:
+            meas1 = meas_arrays[0]
+            meas2 = meas_arrays[1]
+            #meas3 = meas_arrays[2]
+            
+            a1, r1, l1 = get_arl_from_meas(meas1)
+            a2, r2, l2 = get_arl_from_meas(meas2)
+            #a3, r3, l3 = get_arl_from_meas(meas3)
+
+            aa1.append(a1)
+            rr1.append(r1)
+            ll1.append(l1)
+
+            aa2.append(a2)
+            rr2.append(r2)
+            ll2.append(l2)
+
+            #aa3.append(a3)
+            #rr3.append(r3)
+            #ll3.append(l3)
+
+            aa.append(a1 + a2)
+            rr.append(max(r1, r2))
+            ll.append(max(l1, l2))
+        
+        plt.plot(tt, rr, color='red')
+        #plt.plot(tt, ll, color='green')
+        #plt.plot(tt, aa, color='blue')
+
+        plt.xlabel('t, secs')
+        plt.ylabel('A')
+        plt.show()
 
             
 def generate_dataset(sonars, env, objs, robot, traj_len, num_trajs, x_start_bounds, y_start_bounds):
@@ -365,11 +466,11 @@ def generate_dataset(sonars, env, objs, robot, traj_len, num_trajs, x_start_boun
             dataset.append(data_obj)
 
     print('generating completed. Saving...')
-    pickle.dump(dataset, open('datasets/synthetic/single/single_1.bin', 'wb'))
+    pickle.dump(dataset, open('datasets/synthetic/single/single_2.bin', 'wb'))
     print('saved succesfully')
 
 
-def extract_features(dataset, sigma):
+def extract_features(dataset, sigma, index):
     res_arr = []
     n = len(dataset)
     prev = -1
@@ -424,17 +525,34 @@ def extract_features(dataset, sigma):
         v_mean, v_sigma, curvature = pp.get_traj_params(traj)
 
         #extracting features from single sonar data
-        for meas_arrays in graph_meas:
-            for meas in meas_arrays:
-                a, r, l = get_arl_from_meas(meas)
+        l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma = get_params_from_meas(graph_meas)
             
+        write_obj = {
+            "name": name,
+            "x_size": x_size,
+            "y_size": y_size,
+            "z_size": z_size,
+            "v_mean": v_mean,
+            "v_sigma": v_sigma,
+            "curvature": curvature,
+            "l_mean": l_mean,
+            "r_dot_mean": r_dot_mean,
+            "a_dot_mean": a_dot_mean,
+            "r_dot_sigma": r_dot_sigma,
+            "a_dot_sigma": a_dot_sigma
+        }
 
+        res_arr.append(write_obj)
+
+    print('feature extracting completed. Saving...')
+    pickle.dump(res_arr, open('datasets/synthetic/single/features_' + str(index) + '.bin', 'wb'))
+    print('saved succesfully')
 
 #Main code in launched here
 
 env = Environment()
 robot = Robot()
-#obj = Ellipsoid(0.3, 0.3, 0.3, np.array([100, 100*np.tan(np.deg2rad(7.5)) + 0, 0, 0, 0, 0]), name='sphere')
+obj = Ellipsoid(1, 1, 1, np.array([20, 20, 0, 0, 0, 0]), name='sphere')
 
 objs = [
     #Ellipsoid(1, 1, 1, np.array([2, 6, 0, 0, 0, 0])),                        #for sonars testing
@@ -446,14 +564,17 @@ objs = [
     Ellipsoid(3, 1, 1.5, np.array([3, 3, 0, 0, 0, 0]), name='drone')
 ]
 
-sonar  = SingleSonar(0, 0, 15, 500)
+#sonar  = SingleSonar(0, 0, 15, 500)
 #r, a, meas = single_sonar_measure(sonar, obj, robot.get_pose()[0:3], robot.get_pose()[3:6])
 
 #visualize_measures(meas)
 #draw_scene([obj], 15, 20)
 #pans = [0]
-pans = [30, 45, 60]
-sonars = create_sonars_by_pan(pans, 15, 300)
+pans = [37.5, 52.5]
+#sonars = create_sonars_by_pan(pans, 15, 900)
+
+#clouds, meas_array = measure(sonars, obj, robot.get_pose())
+#visualize_measures(meas_array[1])
 
 #traj = np.loadtxt('trajectories/traj_linear_diag.txt', delimiter=' ')
 #datapath = 'datasets/synthetic/single/utils/diag.bin'
@@ -462,4 +583,42 @@ sonars = create_sonars_by_pan(pans, 15, 300)
 
 #data = pickle.load(open(datapath, 'rb'))
 
-generate_dataset(sonars, env, objs, robot, 20, 100, [20, 30], [20, 30])
+#generate_dataset(sonars, env, objs, robot, 20, 100, [80, 90], [80, 90])
+
+dataset1 = pickle.load(open('datasets/synthetic/single/single_1.bin', 'rb'))
+dataset2 = pickle.load(open('datasets/synthetic/single/single_2.bin', 'rb'))
+
+sigma_angle = 15 / (3 * np.sqrt(2))
+
+sigma = np.array([[0.5**2, 0, 0, 0],
+                [0, sigma_angle**2, 0, 0],
+                [0, 0, sigma_angle**2, 0],
+                [0, 0, 0, 0**2]])
+
+extract_features(dataset1, sigma, 1)
+extract_features(dataset2, sigma, 2)
+
+'''for data_obj in dataset:
+    aa1 = []
+    rr1 = []
+    ll1 = []
+    aa2 = []
+    rr2 = []
+    ll2 = []
+    aa3 = []
+    rr3 = []
+    ll3 = []
+    tt = [0.1 * i for i in range(len(data_obj["graph_meas"]))]
+
+    aa = []
+    rr = []
+    ll = []
+
+    #for meas_arrays in data_obj["graph_meas"]:
+    l_mean, r_dot_mean, a_dot_mean, r_dot_sigma, a_dot_sigma = get_params_from_meas(data_obj["graph_meas"])
+
+    print('l_mean = ' + str(l_mean))
+    print('r_dot_mean = ' + str(r_dot_mean))
+    print('a_dot_mean = ' + str(a_dot_mean))
+    print('r_dot_sigma = ' + str(r_dot_sigma))
+    print('a_dot_sigma = ' + str(a_dot_sigma))'''
