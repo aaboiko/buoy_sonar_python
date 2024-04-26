@@ -19,6 +19,14 @@ from sklearn import linear_model, svm
 SONAR_MAX_RANGE = 150
 T = 0.1
 
+def angle_pans_from_n_sonars(n, pan_min, pan_max):
+    width = pan_max - pan_min
+    angle = width / n
+    pans = np.linspace(pan_min + angle/2, pan_max - angle/2, n)
+    n_rays = int(60 * width / n)
+
+    return angle, n_rays, pans
+
 def create_transducers(n_sonars, n_rays):
     transducers = []
     step = 360.0 / n_sonars
@@ -626,10 +634,13 @@ def fit_model(features):
     pickle.dump(model_rfb, open('models/svm/svm_single_1.bin', 'wb'))
 
 
-def validate(model, num_trajs, traj_len, env, objs, robot, angle, num_rays, pans, x_start_bounds, y_start_bounds):
+def validate(model, num_trajs, traj_len, env, objs, robot, angle, num_rays, pans, x_start_bounds, y_start_bounds, regenerate_sonars):
     #dataset generating
     dataset = []
     n = len(objs) * num_trajs
+
+    sonars = create_sonars_by_pan(pans, angle, num_rays)
+    robot.set_transducers(sonars)
 
     for obj in objs:
         if obj.name == 'sphere':
@@ -670,15 +681,16 @@ def validate(model, num_trajs, traj_len, env, objs, robot, angle, num_rays, pans
             iter = 0
 
             for point in traj:
-                print('processing point: ' + str(iter+1) + '/' + str(traj_len))
+                print('processing point: ' + str(iter+1) + '/' + str(traj_len) + '(angle = ' + str(angle) + ')')
                 iter += 1
 
                 env.clear()
                 env.add_object(obj)
                 obj.set_pose(point)
 
-                sonars = create_sonars_by_pan(pans, angle, num_rays)
-                robot.set_transducers(sonars)
+                if regenerate_sonars:
+                    sonars = create_sonars_by_pan(pans, angle, num_rays)
+                    robot.set_transducers(sonars)
 
                 robot_pose = robot.get_pose()
                 cloud, meas_arrays = measure(sonars, obj, robot_pose)
@@ -750,7 +762,7 @@ objs = [
 #visualize_measures(meas)
 #draw_scene([obj], 15, 20)
 #pans = [0]
-pans = [37.5, 52.5]
+#pans = [37.5, 52.5]
 #sonars = create_sonars_by_pan(pans, 15, 900)
 
 #clouds, meas_array = measure(sonars, obj, robot.get_pose())
@@ -769,14 +781,27 @@ pans = [37.5, 52.5]
 #dataset2 = pickle.load(open('datasets/synthetic/single/single_2.bin', 'rb'))
 #dataset12 = pickle.load(open('datasets/synthetic/single/single_12.bin', 'rb'))
 
-model = pickle.load(open('models/svm/svm_single_12.bin', 'rb'))
+#score by traj lenght
+'''model = pickle.load(open('models/svm/svm_single_12.bin', 'rb'))
 scores = []
 
 for traj_len in range(1, 20):
-    score = validate(model, 20, traj_len, env, objs, robot, 15, 900, pans, [80, 90], [80, 90])
+    score = validate(model, 20, traj_len, env, objs, robot, 15, 900, pans, [80, 90], [80, 90], False)
     scores.append(score)
 
-np.savetxt('datasets/synthetic/single/scores_by_traj_len.txt', scores, delimiter=' ')
+np.savetxt('datasets/synthetic/single/scores_by_traj_len.txt', scores, delimiter=' ')'''
+
+#score by sonar angle with pans array variation
+model = pickle.load(open('models/svm/svm_single_12.bin', 'rb'))
+scores = []
+
+for n in range(1, 10):
+    angle, n_rays, pans = angle_pans_from_n_sonars(n, 30, 60)
+    score = validate(model, 20, 20, env, objs, robot, angle, n_rays, pans, [80, 90], [80, 90], False)
+    row = [angle, n, score]
+    scores.append(row)
+
+np.savetxt('datasets/synthetic/single/scores_by_angle.txt', scores, delimiter=' ')
 
 '''sigma_angle = 15 / (3 * np.sqrt(2))
 
